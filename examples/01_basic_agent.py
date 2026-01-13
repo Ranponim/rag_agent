@@ -307,12 +307,17 @@ if __name__ == "__main__":
     print("="*60)
     
     # 설정 확인
+    # 설정 확인
     settings = get_settings()
     if not settings.validate_openai_key():
         print("\n⚠️ OpenAI API 키가 설정되지 않았습니다.")
         print("📝 .env 파일에 OPENAI_API_KEY를 설정해주세요.")
         print("   예: OPENAI_API_KEY=sk-...")
         sys.exit(1)
+
+    # 연결 테스트 (제거됨: 실제 쿼리 실행 시 오류를 포착하여 처리)
+    # from utils.llm_factory import get_llm, log_llm_error
+    # test_llm = get_llm()
     
     # 테스트 쿼리 실행
     test_queries = [
@@ -321,10 +326,17 @@ if __name__ == "__main__":
         "안녕하세요! 반갑습니다.",
     ]
     
+    from utils.llm_factory import log_llm_error
+    
     for query in test_queries:
         try:
             run_agent(query)
         except Exception as e:
-            print(f"❌ 오류 발생: {e}")
+            # 오류 발생 시 상세 로깅
+            # (여기서는 LLM 인스턴스를 직접 가져올 수 없으므로 None 전달하거나, 
+            #  필요하다면 get_llm()을 호출하여 URL 정보를 가져될 수 있음)
+            # 간단히 exception만 넘깁니다.
+            log_llm_error(e)
+            print(f"❌ 실행 중 오류가 발생했습니다. 로그를 확인하세요.")
         
         print("\n")

@@ -50,6 +50,7 @@ class LLMFactory:
         api_key: str,
         model: str = "gpt-4o-mini",
         temperature: float = 0.0,
+        base_url: Optional[str] = None,
         **kwargs
     ) -> BaseChatModel:
         """
@@ -73,61 +74,24 @@ class LLMFactory:
             ...     model="gpt-4o-mini"
             ... )
         """
-        if not api_key or not api_key.startswith("sk-"):
-            raise ValueError("유효한 OpenAI API 키가 필요합니다.")
+        if not api_key:
+             # 로컬 LLM을 위해 더미 키를 허용하지만 경고를 남길 수 있습니다.
+             # 여기서는 호출자가 처리했다고 가정합니다.
+             pass
         
-        logger.info(f"OpenAI LLM 생성 중... (모델: {model})")
+        logger.info(f"OpenAI 호환 LLM 생성 중... (모델: {model}, URL: {base_url or 'default'})")
         
         from langchain_openai import ChatOpenAI
         
         llm = ChatOpenAI(
-            api_key=api_key,
+            api_key=api_key or "dummy-key", # API key is required by library, use dummy if empty
             model=model,
             temperature=temperature,
-            **kwargs
-        )
-        
-        logger.info("OpenAI LLM 인스턴스 생성 완료")
-        return llm
-    
-    @classmethod
-    def create_ollama_llm(
-        cls,
-        base_url: str = "http://localhost:11434",
-        model: str = "llama3.2",
-        temperature: float = 0.0,
-        **kwargs
-    ) -> BaseChatModel:
-        """
-        Ollama 로컬 LLM 인스턴스를 생성합니다.
-        
-        Args:
-            base_url: Ollama 서버 URL
-            model: 사용할 모델명 (기본값: llama3.2)
-            temperature: 생성 온도
-            **kwargs: 추가 매개변수
-        
-        Returns:
-            BaseChatModel: Ollama LLM 인스턴스
-        
-        Example:
-            >>> llm = LLMFactory.create_ollama_llm(
-            ...     base_url="http://localhost:11434",
-            ...     model="llama3.2"
-            ... )
-        """
-        logger.info(f"Ollama LLM 생성 중... (모델: {model})")
-        
-        from langchain_ollama import ChatOllama
-        
-        llm = ChatOllama(
             base_url=base_url,
-            model=model,
-            temperature=temperature,
             **kwargs
         )
         
-        logger.info("Ollama LLM 인스턴스 생성 완료")
+        logger.info("OpenAI 호환 LLM 인스턴스 생성 완료")
         return llm
     
     @classmethod
@@ -154,72 +118,34 @@ class LLMFactory:
             ...     model="text-embedding-3-small"
             ... )
         """
-        if not api_key or not api_key.startswith("sk-"):
-            raise ValueError("유효한 OpenAI API 키가 필요합니다.")
+        # 로컬 LLM의 임베딩을 사용하는 경우 시작 문자열 검증 로직은 제거하거나 완화해야 합니다.
         
         logger.info(f"OpenAI 임베딩 모델 생성 중... (모델: {model})")
         
         from langchain_openai import OpenAIEmbeddings
         
         embeddings = OpenAIEmbeddings(
-            api_key=api_key,
+            api_key=api_key or "dummy-key",
             model=model,
+            base_url=kwargs.pop("base_url", None),
             **kwargs
         )
         
         logger.info("OpenAI 임베딩 인스턴스 생성 완료")
         return embeddings
-    
-    @classmethod
-    def create_huggingface_embeddings(
-        cls,
-        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
-        **kwargs
-    ) -> Embeddings:
-        """
-        HuggingFace 로컬 임베딩 모델 인스턴스를 생성합니다.
-        
-        OpenAI API 키가 없는 경우 대안으로 사용할 수 있습니다.
-        
-        Args:
-            model_name: HuggingFace 모델명
-            **kwargs: 추가 매개변수
-        
-        Returns:
-            Embeddings: HuggingFace 임베딩 인스턴스
-        """
-        logger.info(f"HuggingFace 임베딩 모델 생성 중... (모델: {model_name})")
-        
-        from langchain_huggingface import HuggingFaceEmbeddings
-        
-        embeddings = HuggingFaceEmbeddings(
-            model_name=model_name,
-            **kwargs
-        )
-        
-        logger.info("HuggingFace 임베딩 인스턴스 생성 완료")
-        return embeddings
 
 
-def get_llm(
-    provider: Optional[str] = None,
-    **kwargs
-) -> BaseChatModel:
+def get_llm(**kwargs) -> BaseChatModel:
     """
     설정에 따라 적절한 LLM 인스턴스를 반환합니다.
     
     이 함수는 캐시를 사용하여 동일한 LLM 인스턴스를 재사용합니다.
     
     Args:
-        provider: LLM 제공자 ("openai" 또는 "ollama")
-                  None이면 설정에서 자동 감지
         **kwargs: LLM 생성에 전달할 추가 매개변수
     
     Returns:
         BaseChatModel: LLM 인스턴스
-    
-    Raises:
-        ValueError: LLM 설정이 올바르지 않은 경우
     
     Example:
         >>> llm = get_llm()
@@ -229,42 +155,20 @@ def get_llm(
     from config.settings import get_settings
     settings = get_settings()
     
-    # 제공자 결정
-    if provider is None:
-        provider = settings.get_llm_provider()
-    
-    logger.info(f"LLM 제공자: {provider}")
-    
-    # LLM 생성
-    if provider == "openai":
-        return LLMFactory.create_openai_llm(
-            api_key=settings.openai_api_key,
-            model=settings.openai_model,
-            **kwargs
-        )
-    elif provider == "ollama":
-        return LLMFactory.create_ollama_llm(
-            base_url=settings.ollama_base_url,
-            model=settings.ollama_model,
-            **kwargs
-        )
-    else:
-        raise ValueError(
-            "LLM 설정이 올바르지 않습니다. "
-            ".env 파일에서 OPENAI_API_KEY 또는 OLLAMA_BASE_URL을 설정하세요."
-        )
+    # LLM 생성 (무조건 OpenAI 호환 사용)
+    return LLMFactory.create_openai_llm(
+        api_key=settings.openai_api_key,
+        model=settings.openai_model,
+        base_url=settings.openai_api_base,
+        **kwargs
+    )
 
 
-def get_embeddings(
-    provider: Optional[str] = None,
-    **kwargs
-) -> Embeddings:
+def get_embeddings(**kwargs) -> Embeddings:
     """
     설정에 따라 적절한 임베딩 모델 인스턴스를 반환합니다.
     
     Args:
-        provider: 임베딩 제공자 ("openai" 또는 "huggingface")
-                  None이면 설정에서 자동 감지
         **kwargs: 임베딩 생성에 전달할 추가 매개변수
     
     Returns:
@@ -278,21 +182,50 @@ def get_embeddings(
     from config.settings import get_settings
     settings = get_settings()
     
-    # 제공자 결정
-    if provider is None:
-        provider = settings.get_llm_provider()
+    # 임베딩 모델 생성 (무조건 OpenAI 호환 사용)
+    # 임베딩 전용 URL이 있으면 사용, 없으면 기본 API Base URL 사용
+    embedding_base_url = settings.openai_embedding_api_base or settings.openai_api_base
     
-    # 임베딩 모델 생성
-    if provider == "openai":
-        return LLMFactory.create_openai_embeddings(
-            api_key=settings.openai_api_key,
-            model=settings.openai_embedding_model,
-            **kwargs
-        )
+    return LLMFactory.create_openai_embeddings(
+        api_key=settings.openai_api_key,
+        model=settings.openai_embedding_model,
+        base_url=embedding_base_url,
+        **kwargs
+    )
+
+
+def log_llm_error(e: Exception, llm: Optional[BaseChatModel] = None):
+    """
+    LLM 관련 오류 발생 시 상세한 정보를 로깅합니다.
+    
+    Args:
+        e: 발생한 예외 객체
+        llm: (선택) 관련 LLM 인스턴스 (URL 정보 추출용)
+    """
+    import httpx
+    import openai
+    
+    error_type = type(e).__name__
+    base_url = "unknown"
+    if llm:
+        base_url = getattr(llm, "openai_api_base", "unknown")
+    
+    logger.error(f"❌ LLM 오류 발생! (Type: {error_type})")
+    if llm:
+        logger.error(f"📍 Target URL: {base_url}")
+    
+    if isinstance(e, openai.APIConnectionError):
+        logger.error(f"💡 원인: 서버에 연결할 수 없습니다. URL이 올바른지 확인하세요.")
+        logger.error(f"👉 상세: {str(e)}")
+    elif isinstance(e, httpx.ConnectError):
+        logger.error(f"💡 원인: 네트워크 연결 거부됨. 서버가 실행 중인지 확인하세요.")
+    elif isinstance(e, openai.AuthenticationError):
+        logger.error(f"💡 원인: 인증 실패. API Key가 올바른지 확인하세요.")
+    elif isinstance(e, openai.BadRequestError):
+        logger.error(f"💡 원인: 잘못된 요청입니다. 모델명이나 파라미터를 확인하세요.")
+        logger.error(f"👉 상세: {str(e)}")
     else:
-        # OpenAI가 없으면 HuggingFace 로컬 임베딩 사용
-        logger.info("OpenAI 키가 없어 HuggingFace 로컬 임베딩을 사용합니다.")
-        return LLMFactory.create_huggingface_embeddings(**kwargs)
+        logger.error(f"⚠️ 기타 오류: {str(e)}")
 
 
 # 테스트용 코드
@@ -301,9 +234,7 @@ if __name__ == "__main__":
     from config.settings import get_settings
     settings = get_settings()
     
-    print(f"LLM Provider: {settings.get_llm_provider()}")
+    print(f"LLM Base URL: {settings.openai_api_base}")
     
-    # LLM 생성 테스트 (API 키가 있는 경우만)
-    if settings.validate_openai_key():
-        llm = get_llm()
-        print(f"LLM Type: {type(llm).__name__}")
+    llm = get_llm()
+    print(f"LLM Type: {type(llm).__name__}")

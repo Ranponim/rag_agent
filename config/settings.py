@@ -46,9 +46,12 @@ class Settings(BaseSettings):
     # =========================================================================
     # OpenAI 설정
     # =========================================================================
+    # =========================================================================
+    # OpenAI 설정
+    # =========================================================================
     openai_api_key: str = Field(
         default="",
-        description="OpenAI API 키"
+        description="OpenAI API 키 (또는 호환 서버의 인증 키)"
     )
     openai_model: str = Field(
         default="gpt-4o-mini",
@@ -58,33 +61,13 @@ class Settings(BaseSettings):
         default="text-embedding-3-small",
         description="사용할 OpenAI 임베딩 모델"
     )
-    
-    # =========================================================================
-    # Ollama 설정 (선택)
-    # =========================================================================
-    ollama_base_url: Optional[str] = Field(
+    openai_api_base: str = Field(
+        default="http://localhost:10000/v1",
+        description="OpenAI 호환 API의 Base URL"
+    )
+    openai_embedding_api_base: Optional[str] = Field(
         default=None,
-        description="Ollama 서버 URL"
-    )
-    ollama_model: Optional[str] = Field(
-        default="llama3.2",
-        description="Ollama 모델명"
-    )
-    
-    # =========================================================================
-    # LangSmith 설정 (선택)
-    # =========================================================================
-    langchain_tracing_v2: bool = Field(
-        default=False,
-        description="LangSmith 추적 활성화 여부"
-    )
-    langchain_api_key: Optional[str] = Field(
-        default=None,
-        description="LangSmith API 키"
-    )
-    langchain_project: str = Field(
-        default="langgraph-rag-learning",
-        description="LangSmith 프로젝트명"
+        description="OpenAI 호환 임베딩 API의 Base URL (생략 시 openai_api_base 사용)"
     )
     
     # =========================================================================
@@ -100,37 +83,6 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False  # 환경 변수는 대소문자 구분 안함
-    
-    def validate_openai_key(self) -> bool:
-        """
-        OpenAI API 키가 유효한 형식인지 확인합니다.
-        
-        Returns:
-            bool: API 키가 유효한 형식이면 True
-        """
-        if not self.openai_api_key:
-            logger.warning("OpenAI API 키가 설정되지 않았습니다.")
-            return False
-        if not self.openai_api_key.startswith("sk-"):
-            logger.warning("OpenAI API 키 형식이 올바르지 않습니다.")
-            return False
-        return True
-    
-    def get_llm_provider(self) -> str:
-        """
-        사용 가능한 LLM 제공자를 반환합니다.
-        
-        OpenAI 키가 있으면 'openai', Ollama URL이 있으면 'ollama',
-        둘 다 없으면 'none'을 반환합니다.
-        
-        Returns:
-            str: 'openai', 'ollama', 또는 'none'
-        """
-        if self.validate_openai_key():
-            return "openai"
-        elif self.ollama_base_url:
-            return "ollama"
-        return "none"
 
 
 @lru_cache()
@@ -159,15 +111,10 @@ def get_settings() -> Settings:
     )
     
     # 설정 확인 로그
-    provider = settings.get_llm_provider()
-    logger.info(f"LLM 제공자: {provider}")
-    
-    if provider == "openai":
-        logger.info(f"OpenAI 모델: {settings.openai_model}")
-    elif provider == "ollama":
-        logger.info(f"Ollama 모델: {settings.ollama_model}")
-    else:
-        logger.warning("LLM 제공자가 설정되지 않았습니다. .env 파일을 확인하세요.")
+    logger.info(f"OpenAI API Base: {settings.openai_api_base}")
+    if settings.openai_embedding_api_base:
+        logger.info(f"OpenAI Embedding API Base: {settings.openai_embedding_api_base}")
+    logger.info(f"OpenAI Model: {settings.openai_model}")
     
     return settings
 
@@ -176,4 +123,4 @@ def get_settings() -> Settings:
 if __name__ == "__main__":
     settings = get_settings()
     print(f"OpenAI Model: {settings.openai_model}")
-    print(f"LLM Provider: {settings.get_llm_provider()}")
+    print(f"OpenAI API Base: {settings.openai_api_base}")
