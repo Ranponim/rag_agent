@@ -248,19 +248,20 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("Entity RAG 예제")
     print("="*60)
+    # 설정 확인 (제거됨: Local LLM 등 다양한 환경 지원을 위해 엄격한 키 검증 생략)
     
-    if not get_settings().validate_openai_key():
-        print("\n⚠️ OPENAI_API_KEY를 설정해주세요.")
-        sys.exit(1)
-    
-    queries = [
+    test_queries = [
         "LangGraph와 LangChain의 관계는?",
         "Self-RAG와 Corrective RAG의 차이점은?",
     ]
     
-    for q in queries:
+    from utils.llm_factory import log_llm_error
+    
+    for query in test_queries:
         try:
-            run_entity_rag(q)
+            run_entity_rag(query)
         except Exception as e:
-            print(f"❌ 오류: {e}")
+            # 오류 발생 시 상세 로깅
+            log_llm_error(e)
+            print(f"❌ 오류 발생: {e}")
         print()

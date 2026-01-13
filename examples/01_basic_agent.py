@@ -306,14 +306,9 @@ if __name__ == "__main__":
     print("LangGraph 기본 Agent 예제")
     print("="*60)
     
-    # 설정 확인
-    # 설정 확인
-    settings = get_settings()
-    if not settings.validate_openai_key():
-        print("\n⚠️ OpenAI API 키가 설정되지 않았습니다.")
-        print("📝 .env 파일에 OPENAI_API_KEY를 설정해주세요.")
-        print("   예: OPENAI_API_KEY=sk-...")
-        sys.exit(1)
+    # 설정 확인 (제거됨: Local LLM 등 다양한 환경 지원을 위해 엄격한 키 검증 생략)
+    # 필요한 경우 실행 시점에 오류로 포착
+    pass
 
     # 연결 테스트 (제거됨: 실제 쿼리 실행 시 오류를 포착하여 처리)
     # from utils.llm_factory import get_llm, log_llm_error

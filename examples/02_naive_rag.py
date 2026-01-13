@@ -376,12 +376,8 @@ if __name__ == "__main__":
     print("Naive RAG 예제 - 기본 RAG 파이프라인")
     print("="*60)
     
-    # 설정 확인
-    settings = get_settings()
-    if not settings.validate_openai_key():
-        print("\n⚠️ OpenAI API 키가 설정되지 않았습니다.")
-        print("📝 .env 파일에 OPENAI_API_KEY를 설정해주세요.")
-        sys.exit(1)
+    # 설정 확인 (제거됨: Local LLM 등 다양한 환경 지원을 위해 엄격한 키 검증 생략)
+    pass
     
     # 그래프 시각화
     visualize_graph()
@@ -393,10 +389,14 @@ if __name__ == "__main__":
         "StateGraph는 어떤 역할을 하나요?",
     ]
     
+    from utils.llm_factory import log_llm_error
+    
     for query in test_queries:
         try:
             run_rag(query)
         except Exception as e:
+            # 오류 발생 시 상세 로깅
+            log_llm_error(e)
             print(f"❌ 오류 발생: {e}")
             import traceback
             traceback.print_exc()

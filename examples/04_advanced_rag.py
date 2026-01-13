@@ -358,10 +358,8 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("Advanced RAG 예제 - Self-RAG & Corrective RAG")
     print("="*60)
-    
-    if not get_settings().validate_openai_key():
-        print("\n⚠️ OPENAI_API_KEY를 설정해주세요.")
-        sys.exit(1)
+    # 설정 확인 (제거됨: Local LLM 등 다양한 환경 지원을 위해 엄격한 키 검증 생략)
+    pass
     
     visualize_graph()
     
@@ -371,9 +369,13 @@ if __name__ == "__main__":
         "파이썬으로 웹서버 만드는 법은?",  # 관련 없는 질문 테스트
     ]
     
-    for q in queries:
+    from utils.llm_factory import log_llm_error
+    
+    for query in queries: # Changed from test_queries to queries to match the list name
         try:
-            run_advanced_rag(q)
+            run_advanced_rag(query) # Changed from q to query to match the loop variable
         except Exception as e:
-            print(f"❌ 오류: {e}")
+            # 오류 발생 시 상세 로깅
+            log_llm_error(e)
+            print(f"❌ 오류 발생: {e}")
         print()
