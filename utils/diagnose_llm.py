@@ -66,8 +66,13 @@ def diagnose():
         print("   메시지 전송 중...") 
         
         # 클라이언트의 실제 Base URL 확인
-        if hasattr(llm, "client"):
-             print(f"   OpenAI Client Base URL: {llm.client.base_url}")
+        try:
+            if hasattr(llm, "client") and hasattr(llm.client, "base_url"):
+                 print(f"   OpenAI Client Base URL: {llm.client.base_url}")
+            elif hasattr(llm, "base_url"):
+                 print(f"   ChatOpenAI Base URL: {llm.base_url}")
+        except Exception as e:
+            print(f"   (Base URL 확인 불가: {e})")
         
         response = llm.invoke("Hello, simple test.")
         print(f"   ✅ 응답 수신: {response.content}")

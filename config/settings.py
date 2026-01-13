@@ -50,11 +50,11 @@ class Settings(BaseSettings):
     # OpenAI 설정
     # =========================================================================
     openai_api_key: str = Field(
-        default="",
+        default="1234qwer",
         description="OpenAI API 키 (또는 호환 서버의 인증 키)"
     )
     openai_model: str = Field(
-        default="gpt-4o-mini",
+        default="gpt-oss-20b",
         description="사용할 OpenAI 채팅 모델"
     )
     openai_embedding_model: str = Field(
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
         description="사용할 OpenAI 임베딩 모델"
     )
     openai_api_base: str = Field(
-        default="http://localhost:10000/v1",
+        default="http://10.251.204.93:10000/v1",
         description="OpenAI 호환 API의 Base URL"
     )
     openai_embedding_api_base: Optional[str] = Field(

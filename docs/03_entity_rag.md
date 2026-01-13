@@ -69,14 +69,9 @@ LLM을 사용해 쿼리에서 엔티티를 추출합니다.
 
 **LLM 기반 추출 프롬프트:**
 ```python
-prompt = """텍스트에서 엔티티를 추출하세요.
-JSON 형식: {"entities": [{"name": "이름", "type": "유형"}]}
-
-텍스트: LangGraph와 LangChain의 관계는?
-결과: {"entities": [
-    {"name": "LangGraph", "type": "technology"},
-    {"name": "LangChain", "type": "technology"}
-]}"""
+prompt = """텍스트에서 기술/개념/조직 엔티티를 추출하세요.
+JSON 형식: {{"entities": [{{"name": "이름", "type": "technology|concept|organization"}}]}}
+엔티티 없으면: {{"entities": []}}"""
 ```
 
 ### 2. 엔티티 기반 검색
@@ -92,8 +87,7 @@ manager.add_texts(
 
 # 검색 시 엔티티 매칭
 for doc in search_results:
-    doc_entities = doc.metadata.get("entities", "")
-    if query_entity.lower() in doc_entities.lower():
+    if entity["name"].lower() in doc.metadata.get("entities", "").lower():
         # 엔티티 매칭된 문서
         entity_docs.append(doc)
 ```
@@ -103,7 +97,7 @@ for doc in search_results:
 엔티티 검색과 의미론적 검색 결과를 병합합니다.
 
 ```python
-def merge_results(entity_docs, semantic_docs):
+def merge_results_node(state: EntityRAGState) -> dict:
     # 엔티티 문서 우선
     merged = list(entity_docs)
     seen = {doc.page_content for doc in merged}
@@ -114,7 +108,8 @@ def merge_results(entity_docs, semantic_docs):
             merged.append(doc)
             seen.add(doc.page_content)
     
-    return merged[:5]  # 최대 5개
+    merged = merged[:5]  # 최대 5개
+    return {"merged_documents": merged, "context": context}
 ```
 
 ---
@@ -125,43 +120,65 @@ def merge_results(entity_docs, semantic_docs):
 
 ```python
 class EntityRAGState(TypedDict):
-    question: str
-    entities: List[dict]           # 추출된 엔티티
-    entity_documents: List[Document]
-    semantic_documents: List[Document]
-    merged_documents: List[Document]
-    context: str
-    answer: str
+    """Entity RAG 상태"""
+    question: str                    # 사용자 질문
+    entities: List[dict]             # 추출된 엔티티 [{"name": str, "type": str}]
+    entity_documents: List[Document] # 엔티티 기반 검색 결과
+    semantic_documents: List[Document]  # 의미론적 검색 결과
+    merged_documents: List[Document] # 병합된 문서
+    context: str                     # 최종 컨텍스트
+    answer: str                      # 생성된 답변
 ```
 
 ### 엔티티 추출 노드
 
 ```python
-def extract_entities_node(state):
-    llm = get_llm()
+def extract_entities_node(state: EntityRAGState) -> dict:
+    """쿼리에서 엔티티 추출 (LLM 사용)"""
+    print(f"\n🏷️ 엔티티 추출: '{state['question']}'")
     
+    llm = get_llm()
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """엔티티를 추출하세요.
-JSON: {"entities": [{"name": "...", "type": "..."}]}"""),
+        ("system", """텍스트에서 기술/개념/조직 엔티티를 추출하세요.
+JSON 형식: {{"entities": [{{"name": "이름", "type": "technology|concept|organization"}}]}}
+엔티티 없으면: {{"entities": []}}"""),
         ("human", "{question}"),
     ])
     
-    chain = prompt | llm | JsonOutputParser()
-    result = chain.invoke({"question": state["question"]})
+    try:
+        chain = prompt | llm | JsonOutputParser()
+        result = chain.invoke({"question": state["question"]})
+        entities = result.get("entities", [])
+        print(f"   → 추출: {[e['name'] for e in entities]}")
+    except Exception as e:
+        entities = []
     
-    return {"entities": result.get("entities", [])}
+    return {"entities": entities}
 ```
 
 ### 병렬 실행 구조
 
 ```python
-# 엔티티 추출 후 두 검색이 병렬 실행
-graph.add_edge("extract_entities", "entity_search")
-graph.add_edge("extract_entities", "semantic_search")
-
-# 두 검색 모두 완료 후 병합
-graph.add_edge("entity_search", "merge")
-graph.add_edge("semantic_search", "merge")
+def create_entity_rag_graph():
+    graph = StateGraph(EntityRAGState)
+    
+    # 노드 추가
+    graph.add_node("extract_entities", extract_entities_node)
+    graph.add_node("entity_search", entity_search_node)
+    graph.add_node("semantic_search", semantic_search_node)
+    graph.add_node("merge", merge_results_node)
+    graph.add_node("generate", generate_answer_node)
+    
+    # 엣지: 시작 → 엔티티 추출 → 병렬 검색 → 병합 → 생성 → 종료
+    graph.add_edge(START, "extract_entities")
+    graph.add_edge("extract_entities", "entity_search")
+    graph.add_edge("extract_entities", "semantic_search")
+    graph.add_edge("entity_search", "merge")
+    graph.add_edge("semantic_search", "merge")
+    graph.add_edge("merge", "generate")
+    graph.add_edge("generate", END)
+    
+    return graph.compile()
 ```
 
 ---

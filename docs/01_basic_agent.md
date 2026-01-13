@@ -45,7 +45,7 @@ graph TD
 from langgraph.graph import MessagesState
 
 # MessagesState는 messages 필드를 가진 기본 상태
-# messages: list[BaseMessage] - 대화 히스토리
+#messages: list[BaseMessage] - 대화 히스토리
 ```
 
 **상태의 역할:**
@@ -63,15 +63,21 @@ from langgraph.graph import MessagesState
 def agent_node(state: MessagesState):
     """
     노드 함수는 상태를 받아 업데이트를 반환합니다.
-    
-    Args:
-        state: 현재 그래프 상태
-    
-    Returns:
-        dict: 업데이트할 상태 (기존 상태와 병합됨)
     """
+    settings = get_settings()
     llm = get_llm()
-    response = llm.invoke(state["messages"])
+    
+    # 도구를 LLM에 바인딩
+    llm_with_tools = llm.bind_tools(tools)
+    
+    # 시스템 메시지 추가
+    system_message = SystemMessage(
+        content="당신은 친절한 도우미입니다. 날씨 조회와 계산을 도와줄 수 있습니다."
+    )
+    
+    messages = [system_message] + state["messages"]
+    response = llm_with_tools.invoke(messages)
+    
     return {"messages": [response]}
 ```
 
@@ -102,15 +108,17 @@ graph.add_conditional_edges(
 Agent가 외부 작업을 수행할 때 사용합니다.
 
 ```python
-from langchain_core.tools import tool
-
 @tool
 def get_weather(city: str) -> str:
-    """특정 도시의 날씨를 반환합니다."""
-    return f"{city}: 맑음, 15도"
-
-# LLM에 도구 바인딩
-llm_with_tools = llm.bind_tools([get_weather])
+    """특정 도시의 날씨 정보를 반환합니다."""
+    # 실제로는 외부 API를 호출하지만, 예제에서는 더미 데이터 반환
+    weather_data = {
+        "서울": "맑음, 15°C",
+        "부산": "흐림, 18°C",
+        "제주": "비, 20°C",
+        "인천": "맑음, 14°C",
+    }
+    return weather_data.get(city, f"{city}의 날씨 정보를 찾을 수 없습니다.")
 ```
 
 ---
@@ -131,42 +139,43 @@ llm_with_tools = llm.bind_tools([get_weather])
 
 ### 핵심 코드 설명
 
-#### 도구 정의
-```python
-@tool
-def calculate(expression: str) -> str:
-    """수학 표현식을 계산합니다."""
-    result = eval(expression)  # 예제용, 실제로는 안전한 방법 사용
-    return f"결과: {result}"
-```
-
 #### 라우터 함수
 ```python
-def should_continue(state) -> Literal["tools", END]:
-    """도구 호출이 필요한지 판단"""
+def should_continue(state: MessagesState) -> Literal["tools", END]:
+    """다음에 실행할 노드를 결정하는 라우터 함수입니다."""
     last_message = state["messages"][-1]
     
-    # AIMessage의 tool_calls 확인
-    if last_message.tool_calls:
-        return "tools"  # 도구 실행
-    return END          # 종료
+    # AIMessage의 tool_calls 속성 확인
+    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        print(f"🔧 도구 호출 감지: {[tc['name'] for tc in last_message.tool_calls]}")
+        return "tools"
+    
+    print("✅ 최종 응답 생성 완료")
+    return END
 ```
 
 #### 그래프 구성
 ```python
-graph = StateGraph(MessagesState)
-
-# 노드 추가
-graph.add_node("agent", agent_node)
-graph.add_node("tools", ToolNode(tools))
-
-# 엣지 추가
-graph.add_edge(START, "agent")
-graph.add_conditional_edges("agent", should_continue)
-graph.add_edge("tools", "agent")
-
-# 컴파일
-compiled = graph.compile()
+def create_agent_graph():
+    graph = StateGraph(MessagesState)
+    
+    # 노드 추가
+    graph.add_node("agent", agent_node)
+    tool_node = ToolNode(tools)
+    graph.add_node("tools", tool_node)
+    
+    # 엣지 추가
+    graph.add_edge(START, "agent")
+    
+    # 조건부 엣지
+    graph.add_conditional_edges(
+        "agent",
+        should_continue,
+    )
+    
+    graph.add_edge("tools", "agent")
+    
+    return graph.compile()
 ```
 
 ---
@@ -198,11 +207,11 @@ compiled = graph.compile()
 ### 테스트 3: 도구 불필요
 
 ```
-🙋 사용자: 안녕하세요!
+🙋 사용자: 안녕하세요! 반갑습니다.
 ============================================================
 ✅ 최종 응답 생성 완료
 
-🤖 Agent: 안녕하세요! 무엇을 도와드릴까요?
+🤖 Agent: 안녕하세요! 반가워요. 무엇을 도와드릴까요?
 ```
 
 ---
@@ -227,11 +236,11 @@ def search_web(query: str) -> str:
 
 ### 3. 스트리밍 실행
 
-`invoke()` 대신 `stream()`을 사용해 실시간 출력을 확인하세요.
+`stream()`을 사용해 실시간 출력을 확인하세요.
 
 ```python
-for event in graph.stream(initial_state):
-    print(event)
+for step, state in enumerate(graph.stream(initial_state, stream_mode="values")):
+    print(f"Step {step}: ...")
 ```
 
 ---

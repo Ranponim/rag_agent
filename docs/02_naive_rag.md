@@ -65,16 +65,16 @@ from utils.vector_store import VectorStoreManager
 
 manager = VectorStoreManager(
     embeddings=embeddings,
-    collection_name="my_rag",
+    collection_name="naive_rag_example",
     chunk_size=500,      # 청크 크기
     chunk_overlap=100,   # 청크 간 중복
 )
 
 # 문서 추가
-manager.add_texts(["문서1", "문서2"])
+manager.add_texts(texts=sample_texts)
 
 # 검색
-docs = manager.search("질문", k=3)
+docs = manager.search(query="질문", k=3)
 ```
 
 ### 2. 임베딩 (Embedding)
@@ -95,23 +95,6 @@ vector = embeddings.embed_query("안녕하세요")
 
 긴 문서를 적절한 크기로 분할합니다.
 
-```python
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-splitter = RecursiveCharacterTextSplitter(
-    chunk_size=500,
-    chunk_overlap=100,
-    separators=["\n\n", "\n", ".", " "],
-)
-
-chunks = splitter.split_text(long_document)
-```
-
-**청킹이 중요한 이유:**
-- LLM 컨텍스트 길이 제한
-- 더 정확한 유사도 검색
-- 관련 부분만 효율적으로 전달
-
 ---
 
 ## 코드 분석
@@ -120,53 +103,81 @@ chunks = splitter.split_text(long_document)
 
 ```python
 class RAGState(TypedDict):
-    question: str           # 사용자 질문
-    context: str            # 검색된 컨텍스트
-    documents: List[Document]  # 검색된 문서 객체
-    answer: str             # 최종 답변
+    """
+    RAG 파이프라인의 상태를 정의합니다.
+    """
+    question: str                    # 사용자 질문
+    context: str                     # 검색된 컨텍스트 (문자열)
+    documents: List[Document]        # 검색된 문서 리스트
+    answer: str                      # 최종 답변
 ```
 
 ### Retrieve 노드
 
 ```python
 def retrieve_node(state: RAGState) -> dict:
-    """문서 검색"""
-    manager = get_vector_store()
+    """
+    검색 노드: 사용자 질문과 관련된 문서를 검색합니다.
+    """
+    print(f"\n🔍 검색 중: '{state['question']}'")
     
-    # 유사도 검색
+    # Vector Store에서 문서 검색
+    manager = get_vector_store()
     documents = manager.search(
         query=state["question"],
-        k=3  # 상위 3개
+        k=3  # 상위 3개 문서 검색
     )
     
-    # 컨텍스트 문자열 생성
-    context = "\n\n".join([
-        f"[문서 {i}]\n{doc.page_content}"
-        for i, doc in enumerate(documents, 1)
-    ])
+    print(f"   → {len(documents)}개 문서 발견")
     
-    return {"documents": documents, "context": context}
+    # 문서 내용을 컨텍스트 문자열로 결합
+    context_parts = []
+    for i, doc in enumerate(documents, 1):
+        context_parts.append(f"[문서 {i}]\n{doc.page_content}")
+    
+    context = "\n\n".join(context_parts)
+    
+    return {
+        "documents": documents,
+        "context": context,
+    }
 ```
 
 ### Generate 노드
 
 ```python
 def generate_node(state: RAGState) -> dict:
-    """답변 생성"""
+    """
+    생성 노드: 검색된 문서를 바탕으로 답변을 생성합니다.
+    """
+    print("\n💭 답변 생성 중...")
+    
     llm = get_llm()
     
+    # RAG 프롬프트 템플릿
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """컨텍스트 기반으로 답변하세요.
-        
+        ("system", """당신은 도움이 되는 AI 어시스턴트입니다.
+아래 제공된 컨텍스트를 기반으로 사용자의 질문에 답변하세요.
+
+중요:
+- 컨텍스트에 있는 정보만 사용하세요
+- 컨텍스트에 답이 없으면 "제공된 정보에서 답을 찾을 수 없습니다"라고 말하세요
+- 답변은 명확하고 간결하게 작성하세요
+
 컨텍스트:
 {context}"""),
         ("human", "{question}"),
     ])
     
-    response = (prompt | llm).invoke({
+    # 프롬프트 구성 및 LLM 호출
+    chain = prompt | llm
+    
+    response = chain.invoke({
         "context": state["context"],
         "question": state["question"],
     })
+    
+    print("   → 답변 생성 완료")
     
     return {"answer": response.content}
 ```
@@ -222,9 +233,7 @@ graph TD
 📚 검색된 문서 수: 3
 
 🤖 답변:
-LangGraph는 LangChain 팀에서 개발한 라이브러리로, 상태를 가진 
-다중 행위자 애플리케이션을 구축하기 위한 도구입니다. 
-주요 특징으로는 상태 관리, 사이클 지원, 세밀한 제어 등이 있습니다.
+LangGraph는 LangChain 팀에서 개발한 라이브러리로, 상태를 가진 다중 행위자 애플리케이션을 구축합니다.
 ```
 
 ---
