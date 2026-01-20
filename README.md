@@ -81,6 +81,7 @@ for event in graph.stream(initial_state):
 
 - [LangGraph 핵심 요약](#-langgraph-핵심-요약-cheat-sheet)
 - [학습 로드맵](#-학습-로드맵)
+- [개념 학습](#-개념-학습)
 - [설치 방법](#-설치-방법)
 - [예제 가이드](#-예제-가이드)
     - [1. Basic Agent](#1️⃣-basic-agent-01_basic_agentpy)
@@ -96,15 +97,26 @@ for event in graph.stream(initial_state):
 
 ```mermaid
 graph LR
-    A[01 Basic Agent] --> B[02 Naive RAG]
+    Concept[00 개념 학습] --> A[01 Basic Agent]
+    A --> B[02 Naive RAG]
     B --> C[03 Entity RAG]
     C --> D[04 Advanced RAG]
     
+    style Concept fill:#fff9c4,stroke:#fbc02d
     style A fill:#e8f5e9,stroke:#66bb6a
     style B fill:#c8e6c9,stroke:#66bb6a
     style C fill:#a5d6a7,stroke:#66bb6a
     style D fill:#81c784,stroke:#66bb6a
 ```
+
+## 📖 개념 학습
+
+LangGraph를 시작하기 전에 LangChain과의 차이점과 필수 개념을 먼저 익히세요.
+
+- [**00. LangGraph 개념 및 LangChain 필수 요소**](docs/00_concepts.md)
+  - LangChain vs LangGraph 차이점
+  - LangGraph 학습을 위한 4가지 필수 요소 (ChatModel, Prompt, Tools, Messages)
+  - LangGraph의 핵심 구조 (State, Node, Edge)
 
 | 단계 | 예제 | 핵심 학습 내용 | 난이도 |
 |:---:|:---|:---|:---:|
