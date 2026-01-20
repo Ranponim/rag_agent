@@ -44,26 +44,23 @@ class Settings(BaseSettings):
     """
     
     # =========================================================================
-    # OpenAI 설정
-    # =========================================================================
-    # =========================================================================
-    # OpenAI 설정
+    # OpenAI 및 Local LLM 설정
     # =========================================================================
     openai_api_key: str = Field(
-        default="1234qwer",
-        description="OpenAI API 키 (또는 호환 서버의 인증 키)"
+        default="lm-studio",
+        description="OpenAI API 키 (Local LLM 사용 시 더미 값 가능)"
     )
     openai_model: str = Field(
-        default="gpt-oss-20b",
+        default="local-model",
         description="사용할 OpenAI 채팅 모델"
     )
     openai_embedding_model: str = Field(
-        default="text-embedding-3-small",
+        default="local-embedding-model",
         description="사용할 OpenAI 임베딩 모델"
     )
     openai_api_base: str = Field(
-        default="http://10.251.204.93:10000/v1",
-        description="OpenAI 호환 API의 Base URL"
+        default="http://localhost:1234/v1",
+        description="OpenAI 호환 API의 Base URL (예: LM Studio, Ollama)"
     )
     openai_embedding_api_base: Optional[str] = Field(
         default=None,
@@ -101,16 +98,18 @@ def get_settings() -> Settings:
         >>> print(settings.openai_model)
         gpt-4o-mini
     """
-    logger.info("설정을 로드합니다...")
+    # logger.info("설정을 로드합니다...")
+    # 로거 초기화 전에 로깅을 하면 중복되거나 설정 전 포맷으로 출력될 수 있어 제거
     settings = Settings()
     
     # 로깅 레벨 설정
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper()),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        force=True # 기존 핸들러 덮어쓰기
     )
     
-    # 설정 확인 로그
+    # 설정 확인 로그 (최초 1회만 실행됨)
     logger.info(f"OpenAI API Base: {settings.openai_api_base}")
     if settings.openai_embedding_api_base:
         logger.info(f"OpenAI Embedding API Base: {settings.openai_embedding_api_base}")
