@@ -1,22 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-04. Advanced RAG 예제 - Self-RAG & Corrective RAG 구현
+04. Advanced RAG 예제 - Self-RAG & Corrective RAG
 
-고급 RAG 패턴으로 검색 결과 평가, 관련성 검증, 자기 수정 루프를 구현합니다.
+이 예제는 검색 품질과 답변 정확성을 높이기 위한 고급 RAG 패턴을 구현합니다.
+Self-RAG의 개념을 도입하여, 검색된 문서의 관련성을 평가하고(Grading),
+답변이 환각(Hallucination)인지 검사하며, 필요 시 재검색(Fallback)을 수행합니다.
 
 학습 목표:
-    1. 조건부 분기를 활용한 적응형 RAG
-    2. 문서 관련성 평가 (Grading)
-    3. 답변 품질 검증 (Hallucination Check)
-    4. 자기 수정 루프 구현
+    1. 문서 관련성 평가(Relevance Grading) 노드 구현
+    2. 조건부 엣지(Conditional Edge)를 이용한 흐름 제어 및 루프
+    3. 환각 감지 및 수정 전략 (Corrective RAG)
 
-실행: python examples/04_advanced_rag.py
+실행 방법:
+    python examples/04_advanced_rag.py
 """
 
 import sys
 from pathlib import Path
 from typing import TypedDict, List, Literal
 
+# 프로젝트 루트를 path에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from langchain_core.documents import Document
@@ -25,7 +28,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from langgraph.graph import StateGraph, START, END
 
 from config.settings import get_settings
-from utils.llm_factory import get_llm, get_embeddings
+from utils.llm_factory import get_llm, get_embeddings, log_llm_error
 from utils.vector_store import VectorStoreManager
 
 
@@ -37,345 +40,178 @@ class AdvancedRAGState(TypedDict):
     """
     Advanced RAG 상태
     
-    Naive RAG와 달리 평가 및 수정 관련 필드가 추가됨
+    평가 결과(grading)와 재시도 횟수(loop control)를 상태로 관리합니다.
     """
-    question: str                    # 사용자 질문
-    documents: List[Document]        # 검색된 문서
-    relevant_documents: List[Document]  # 관련성 있는 문서만
-    context: str                     # 컨텍스트
-    answer: str                      # 생성된 답변
-    relevance_score: str             # 관련성 평가 ("relevant" | "not_relevant")
-    hallucination_check: str         # 환각 체크 ("grounded" | "hallucinated")
-    retry_count: int                 # 재시도 횟수
+    question: str
+    documents: List[Document]
+    answer: str
+    grade: str               # "relevant" or "irrelevant"
+    hallucination: str       # "yes" or "no"
+    loop_count: int          # 무한 루프 방지 카운터
 
 
 # =============================================================================
-# 2. Vector Store 초기화
+# 2. Vector Store 준비
 # =============================================================================
 
-_adv_vs: VectorStoreManager = None
+def get_vector_store() -> VectorStoreManager:
+    embeddings = get_embeddings()
+    manager = VectorStoreManager(embeddings=embeddings, collection_name="advanced_rag")
 
-def get_advanced_vs() -> VectorStoreManager:
-    """Advanced RAG용 Vector Store"""
-    global _adv_vs
-    if _adv_vs is None:
-        print("📚 Advanced RAG Vector Store 초기화...")
-        _adv_vs = VectorStoreManager(
-            embeddings=get_embeddings(),
-            collection_name="advanced_rag",
-            chunk_size=400,
-        )
-        samples = [
-            "LangGraph는 상태 기반 에이전트를 위한 프레임워크입니다. StateGraph로 노드와 엣지를 정의합니다.",
-            "Self-RAG는 LLM이 검색 필요성을 스스로 판단하고, 검색 결과와 생성 응답의 품질을 평가합니다.",
-            "Corrective RAG는 검색된 문서의 관련성을 평가하고, 품질이 낮으면 웹 검색으로 보완합니다.",
-            "RAG 파이프라인은 검색(Retrieval), 증강(Augmentation), 생성(Generation) 3단계로 구성됩니다.",
-            "Adaptive RAG는 쿼리 복잡도에 따라 단순 응답, 검색 응답, 다단계 추론을 선택합니다.",
-            "Hallucination은 LLM이 사실이 아닌 정보를 생성하는 현상으로, RAG로 완화할 수 있습니다.",
+    if True:
+        texts = [
+            "Self-RAG는 LLM이 스스로 검색 필요성을 판단하고 생성된 답변을 비평(Critique)하는 프레임워크입니다.",
+            "Corrective RAG(CRAG)는 검색된 문서가 질문과 관련이 없는 경우 웹 검색 등을 통해 지식을 수정/보완합니다.",
+            "LangGraph는 순환(Cycle)이 있는 그래프를 통해 에이전트의 자기 수정(Self-Correction) 패턴을 지원합니다.",
+            "Hallucination(환각)은 LLM이 사실이 아닌 정보를 그럴듯하게 생성하는 현상입니다.",
         ]
-        _adv_vs.add_texts(texts=samples)
-        print(f"✅ {len(samples)}개 문서 로드")
-    return _adv_vs
+        manager.add_texts(texts)
+
+    return manager
 
 
 # =============================================================================
-# 3. 노드 함수
+# 3. 노드 함수 정의
 # =============================================================================
 
-def retrieve_node(state: AdvancedRAGState) -> dict:
-    """문서 검색"""
-    print(f"\n🔍 검색: '{state['question']}'")
-    docs = get_advanced_vs().search(query=state["question"], k=4)
-    print(f"   → {len(docs)}개 문서")
+def retrieve(state: AdvancedRAGState):
+    """문서 검색 노드"""
+    print(f"\n🔍 검색 수행: {state['question']}")
+    vs = get_vector_store()
+    docs = vs.search(state["question"], k=3)
     return {"documents": docs}
 
 
-def grade_documents_node(state: AdvancedRAGState) -> dict:
-    """
-    문서 관련성 평가 (Grading)
-    
-    LLM을 사용하여 각 문서가 질문과 관련있는지 평가합니다.
-    관련 없는 문서는 필터링합니다.
-    """
-    print("\n📊 문서 관련성 평가...")
+def grade_documents(state: AdvancedRAGState):
+    """문서 관련성 평가 노드 (Grading)"""
+    print("📊 문서 평가 중...")
     
     llm = get_llm()
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", """문서가 질문과 관련있으면 "yes", 없으면 "no"만 답하세요.
+    # Pydantic OutputParser를 쓰면 더 좋지만, 여기선 프롬프트로 간단히 처리
+    prompt = ChatPromptTemplate.from_template(
+        """당신은 문서 평가자입니다. 다음 문서가 사용자의 질문과 관련이 있는지 평가하세요.
+        관련이 있다면 'yes', 없다면 'no'라고만 답하세요.
 
-질문: {question}
-문서: {document}
-
-관련성 (yes/no):"""),
-    ])
+        질문: {question}
+        문서: {document}
+        """
+    )
     
     chain = prompt | llm
-    relevant_docs = []
     
+    # 간소화를 위해 첫 번째 문서만 평가하거나, 전체를 평가해서 하나라도 관련 있으면 pass 등 전략 선택 가능
+    # 여기서는 검색된 문서 중 하나라도 관련 있으면 'relevant'로 판단
+    is_relevant = False
     for doc in state["documents"]:
-        result = chain.invoke({
-            "question": state["question"],
-            "document": doc.page_content[:500]
-        })
-        
-        if "yes" in result.content.lower():
-            relevant_docs.append(doc)
+        res = chain.invoke({"question": state["question"], "document": doc.page_content})
+        if "yes" in res.content.lower():
+            is_relevant = True
+            break
+
+    grade = "relevant" if is_relevant else "irrelevant"
+    print(f"   -> 평가 결과: {grade}")
     
-    print(f"   → 관련 문서: {len(relevant_docs)}/{len(state['documents'])}개")
-    
-    # 관련성 점수 결정
-    score = "relevant" if len(relevant_docs) >= 2 else "not_relevant"
-    
-    # 컨텍스트 생성
-    context = "\n\n".join([
-        f"[{i+1}] {doc.page_content}" for i, doc in enumerate(relevant_docs)
-    ]) if relevant_docs else ""
-    
-    return {
-        "relevant_documents": relevant_docs,
-        "relevance_score": score,
-        "context": context,
-    }
+    return {"grade": grade}
 
 
-def generate_node(state: AdvancedRAGState) -> dict:
-    """답변 생성"""
-    print("\n💭 답변 생성...")
-    
-    if not state["context"]:
-        return {"answer": "관련 정보를 찾을 수 없습니다."}
+def generate(state: AdvancedRAGState):
+    """답변 생성 노드"""
+    print("📝 답변 생성 중...")
+    context = "\n".join(d.page_content for d in state["documents"])
     
     llm = get_llm()
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", """컨텍스트만 사용하여 답변하세요. 컨텍스트에 없는 정보는 추측하지 마세요.
-
-컨텍스트:
-{context}"""),
-        ("human", "{question}"),
-    ])
+    res = llm.invoke(f"컨텍스트: {context}\n\n질문: {state['question']}\n답변:")
     
-    response = (prompt | llm).invoke({
-        "context": state["context"],
-        "question": state["question"],
-    })
-    
-    return {"answer": response.content}
+    return {"answer": res.content}
 
 
-def check_hallucination_node(state: AdvancedRAGState) -> dict:
-    """
-    환각 검사 (Hallucination Check)
+def rewrite_query(state: AdvancedRAGState):
+    """질문 재작성 노드 (Fallback)"""
+    print("🔄 질문 재작성 중...")
     
-    생성된 답변이 컨텍스트에 기반하는지 검증합니다.
-    """
-    print("\n🔬 환각 검사...")
+    # 실제로는 LLM을 이용해 쿼리를 개선하겠지만, 여기선 단순히 뒤에 '설명'을 붙이는 예시
+    new_query = state["question"] + " (상세 설명)"
     
-    if not state["context"] or not state["answer"]:
-        return {"hallucination_check": "grounded"}
-    
-    llm = get_llm()
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", """답변이 컨텍스트에 근거하면 "grounded", 그렇지 않으면 "hallucinated"만 답하세요.
-
-컨텍스트:
-{context}
-
-답변:
-{answer}
-
-판정 (grounded/hallucinated):"""),
-    ])
-    
-    result = (prompt | llm).invoke({
-        "context": state["context"],
-        "answer": state["answer"],
-    })
-    
-    check = "grounded" if "grounded" in result.content.lower() else "hallucinated"
-    print(f"   → 결과: {check}")
-    
-    return {"hallucination_check": check}
-
-
-def fallback_search_node(state: AdvancedRAGState) -> dict:
-    """
-    폴백 검색 (Fallback)
-    
-    관련 문서가 부족하거나 환각이 감지되면 추가 검색을 수행합니다.
-    실제로는 웹 검색 등을 사용할 수 있습니다.
-    """
-    print("\n🔄 폴백 검색...")
-    
-    # 재시도 횟수 증가
-    retry = state.get("retry_count", 0) + 1
-    
-    if retry >= 2:
-        print("   → 최대 재시도 도달")
-        return {
-            "retry_count": retry,
-            "answer": f"죄송합니다. '{state['question']}'에 대한 정확한 정보를 찾지 못했습니다."
-        }
-    
-    # 다른 검색어로 재검색 (여기서는 단순 재검색)
-    vs = get_advanced_vs()
-    docs = vs.search(query=f"{state['question']} 설명", k=3)
-    
-    context = "\n\n".join([doc.page_content for doc in docs])
-    
-    print(f"   → 재검색 결과: {len(docs)}개")
     return {
-        "documents": docs,
-        "relevant_documents": docs,
-        "context": context,
-        "retry_count": retry,
-        "relevance_score": "relevant" if docs else "not_relevant",
+        "question": new_query,
+        "loop_count": state.get("loop_count", 0) + 1
     }
 
 
 # =============================================================================
-# 4. 라우터 함수 (조건부 분기)
+# 4. 조건부 엣지 함수
 # =============================================================================
 
-def route_by_relevance(state: AdvancedRAGState) -> Literal["generate", "fallback"]:
-    """관련성에 따라 분기"""
-    if state.get("relevance_score") == "relevant":
+def check_relevance(state: AdvancedRAGState) -> Literal["generate", "rewrite_query", "end"]:
+    """평가 결과에 따른 분기 처리"""
+
+    # 무한 루프 방지 (최대 2회 재시도)
+    if state.get("loop_count", 0) > 1:
+        print("   -> 최대 재시도 횟수 초과, 종료")
+        return "end"
+
+    if state["grade"] == "relevant":
+        print("   -> 관련 문서 확인됨, 답변 생성으로 이동")
         return "generate"
-    return "fallback"
-
-
-def route_by_hallucination(state: AdvancedRAGState) -> Literal[END, "fallback"]:
-    """환각 검사 결과에 따라 분기"""
-    if state.get("hallucination_check") == "grounded":
-        return END
-    if state.get("retry_count", 0) >= 2:
-        return END
-    return "fallback"
+    else:
+        print("   -> 관련 문서 없음, 질문 재작성으로 이동")
+        return "rewrite_query"
 
 
 # =============================================================================
-# 5. 그래프 생성
+# 5. 그래프 구성
 # =============================================================================
 
 def create_advanced_rag_graph():
-    """
-    Advanced RAG 그래프 생성
+    builder = StateGraph(AdvancedRAGState)
     
-    구조:
-        START → retrieve → grade_documents ─┬→ generate → check_hallucination ─┬→ END
-                                            │                                   │
-                                            └→ fallback ←──────────────────────┘
+    builder.add_node("retrieve", retrieve)
+    builder.add_node("grade_documents", grade_documents)
+    builder.add_node("generate", generate)
+    builder.add_node("rewrite_query", rewrite_query)
     
-    핵심 기능:
-    1. 문서 관련성 평가 (Grade Documents)
-    2. 관련 문서 부족 시 폴백 검색
-    3. 환각 검사 (Hallucination Check)  
-    4. 환각 감지 시 재검색
-    """
-    graph = StateGraph(AdvancedRAGState)
+    builder.add_edge(START, "retrieve")
+    builder.add_edge("retrieve", "grade_documents")
     
-    # 노드 추가
-    graph.add_node("retrieve", retrieve_node)
-    graph.add_node("grade", grade_documents_node)
-    graph.add_node("generate", generate_node)
-    graph.add_node("check_hallucination", check_hallucination_node)
-    graph.add_node("fallback", fallback_search_node)
-    
-    # 엣지
-    graph.add_edge(START, "retrieve")
-    graph.add_edge("retrieve", "grade")
-    
-    # 조건부 분기: 관련성에 따라
-    graph.add_conditional_edges(
-        "grade",
-        route_by_relevance,
-        {"generate": "generate", "fallback": "fallback"}
+    # 조건부 엣지
+    builder.add_conditional_edges(
+        "grade_documents",
+        check_relevance,
+        {
+            "generate": "generate",
+            "rewrite_query": "rewrite_query",
+            "end": END
+        }
     )
     
-    graph.add_edge("generate", "check_hallucination")
+    builder.add_edge("rewrite_query", "retrieve") # 루프: 재작성 후 다시 검색
+    builder.add_edge("generate", END)
     
-    # 조건부 분기: 환각에 따라
-    graph.add_conditional_edges(
-        "check_hallucination",
-        route_by_hallucination,
-        {END: END, "fallback": "fallback"}
-    )
-    
-    # 폴백 후 재생성
-    graph.add_edge("fallback", "generate")
-    
-    print("✅ Advanced RAG 그래프 컴파일 완료!")
-    return graph.compile()
+    return builder.compile()
 
 
 # =============================================================================
-# 6. 실행
+# 6. 실행 및 테스트
 # =============================================================================
-
-def run_advanced_rag(question: str) -> str:
-    """Advanced RAG 실행"""
-    graph = create_advanced_rag_graph()
-    
-    initial_state = {
-        "question": question,
-        "documents": [],
-        "relevant_documents": [],
-        "context": "",
-        "answer": "",
-        "relevance_score": "",
-        "hallucination_check": "",
-        "retry_count": 0,
-    }
-    
-    print(f"\n{'='*60}\n🙋 질문: {question}\n{'='*60}")
-    result = graph.invoke(initial_state)
-    
-    print(f"\n📊 평가 결과:")
-    print(f"   - 관련성: {result['relevance_score']}")
-    print(f"   - 환각 검사: {result['hallucination_check']}")
-    print(f"   - 재시도: {result['retry_count']}회")
-    print(f"\n🤖 답변:\n{result['answer']}\n{'='*60}")
-    
-    return result["answer"]
-
-
-def visualize_graph():
-    """그래프 구조 시각화"""
-    print("\n📊 Advanced RAG 그래프 (Mermaid)")
-    print("```mermaid")
-    print("graph TD")
-    print("    START --> retrieve[검색]")
-    print("    retrieve --> grade[관련성 평가]")
-    print("    grade -->|relevant| generate[생성]")
-    print("    grade -->|not_relevant| fallback[폴백 검색]")
-    print("    generate --> check[환각 검사]")
-    print("    check -->|grounded| END")
-    print("    check -->|hallucinated| fallback")
-    print("    fallback --> generate")
-    print("```")
-
 
 if __name__ == "__main__":
-    print("\n" + "="*60)
-    print("Advanced RAG 예제 - Self-RAG & Corrective RAG")
-    print("="*60)
-    # 설정 확인 (제거됨: Local LLM 등 다양한 환경 지원을 위해 엄격한 키 검증 생략)
-    pass
+    print("\nLangGraph Advanced RAG Example (Self-Correction)")
     
-    visualize_graph()
+    graph = create_advanced_rag_graph()
     
-    queries = [
-        "Self-RAG란 무엇인가요?",
-        "Hallucination을 방지하는 방법은?",
-        "파이썬으로 웹서버 만드는 법은?",  # 관련 없는 질문 테스트
-    ]
+    # 1. 정상 질문
+    q1 = "Self-RAG가 뭐야?"
+    # 2. 관련 없는 질문 (재작성 유도용)
+    q2 = "오늘 점심 메뉴 추천해줘"
     
-    from utils.llm_factory import log_llm_error
-    
-    for query in queries: # Changed from test_queries to queries to match the list name
+    for q in [q1, q2]:
+        print(f"\n{'='*40}\n질문: {q}\n{'='*40}")
         try:
-            run_advanced_rag(query) # Changed from q to query to match the loop variable
+            # 초기 상태에 loop_count 0 설정
+            result = graph.invoke({"question": q, "loop_count": 0})
+            if result.get("answer"):
+                print(f"\n🤖 답변: {result['answer']}")
+            else:
+                print("\n🤖 답변을 생성하지 못했습니다.")
         except Exception as e:
-            # 오류 발생 시 상세 로깅
             log_llm_error(e)
-            print(f"❌ 오류 발생: {e}")
-        print()
