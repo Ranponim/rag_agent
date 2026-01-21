@@ -245,6 +245,18 @@ for step, state in enumerate(graph.stream(initial_state, stream_mode="values")):
 
 ---
 
+## 🔗 상세 예제
+
+기본 개념을 익혔다면 다음 상세 예제로 심화 학습하세요:
+
+| 예제 | 주제 | 학습 내용 |
+|------|------|----------|
+| [01a. Multi-Tool Agent](01a_multi_tool_agent.md) | 다중 도구 | 5개 이상 도구 관리, 도구 선택 로직 |
+| [01b. Memory Agent](01b_memory_agent.md) | 메모리 기능 | MemorySaver, thread_id로 대화 유지 |
+| [01c. Multi-Agent](01c_multi_agent.md) | 협업 시스템 | Supervisor 패턴, 전문 Agent 협력 |
+
+---
+
 ## 다음 단계
 
 ➡️ [02. Naive RAG](02_naive_rag.md) - 기본 RAG 파이프라인 구현

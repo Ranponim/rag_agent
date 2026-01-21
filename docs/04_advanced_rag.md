@@ -354,6 +354,24 @@ Advanced RAG는 Naive RAG의 한계를 극복하는 패턴들의 조합입니다
 
 ---
 
+## 🔗 상세 예제
+
+Advanced RAG를 익혔다면 다음 상세 예제로 심화 학습하세요:
+
+| 예제 | 주제 | 학습 내용 |
+|------|------|----------|
+| [04a. Adaptive RAG](04a_adaptive_rag.md) | 적응형 RAG | 쿼리 복잡도 분류, 동적 전략 선택 |
+
+---
+
+## 🚀 통합 테스트
+
+모든 기법을 마스터했다면 통합 테스트로 실전 연습:
+
+➡️ [05. Integrated Test](05_integrated_test.md) - 모든 기법 통합
+
+---
+
 ## 참고 자료
 
 - [Self-RAG 논문](https://arxiv.org/abs/2310.11511)

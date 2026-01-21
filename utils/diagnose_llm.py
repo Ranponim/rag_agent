@@ -33,8 +33,17 @@ def diagnose():
         models_url = f"{base_url.rstrip('/')}/models"
         print(f"   URL: {models_url}")
         
-        headers = {"Authorization": f"Bearer {api_key}"}
-        response = httpx.get(models_url, headers=headers, timeout=5.0)
+        # Curl과 유사한 헤더 설정
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "curl/7.83.1", # Mimic curl
+            "Accept": "*/*"
+        }
+        
+        # trust_env=False로 시스템 프록시 무시, verifying=False로 인증서 무시 시도
+        transport = httpx.HTTPTransport(retries=1)
+        with httpx.Client(transport=transport, trust_env=False, verify=False) as client:
+            response = client.get(models_url, headers=headers, timeout=10.0)
         
         print(f"   상태 코드: {response.status_code}")
         if response.status_code == 200:
