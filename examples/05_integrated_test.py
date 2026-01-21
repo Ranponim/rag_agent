@@ -20,20 +20,25 @@ import sys
 from pathlib import Path
 from typing import TypedDict, List, Literal, Annotated
 
+# 프로젝트 루트를 경로에 추가하여 내부 모듈(config, utils)을 불러올 수 있게 함
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from langchain_core.documents import Document
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import tool
-from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.memory import MemorySaver
+# LangChain: 메시지 구조, 도구 정의 및 RAG 관련
+from langchain_core.documents import Document  # 표준 문서 객체
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage  # 다양한 메시지 타입
+from langchain_core.prompts import ChatPromptTemplate  # 프롬프트 설계도
+from langchain_core.tools import tool  # 도구 정의 데코레이터
 
-from config.settings import get_settings
-from utils.llm_factory import get_llm, get_embeddings
-from utils.vector_store import VectorStoreManager
+# LangGraph: 워크플로우 제어, 상태 관리 및 체크포인트
+from langgraph.graph import StateGraph, START, END  # 그래프 빌더 및 주요 제어 포인트
+from langgraph.graph.message import add_messages  # 메시지 자동 병합 리듀서
+from langgraph.prebuilt import ToolNode  # 표준 도구 실행 노드
+from langgraph.checkpoint.memory import MemorySaver  # 대화 기록 영속성 관리를 위한 체크포인터
+
+# 프로젝트 유틸리티
+from config.settings import get_settings  # 설정 및 환경 변수 로드
+from utils.llm_factory import get_llm, get_embeddings  # LLM/임베딩 팩토리
+from utils.vector_store import VectorStoreManager  # 벡터 DB 검색 매니저
 
 
 # =============================================================================

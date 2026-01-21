@@ -16,18 +16,22 @@
 
 import sys
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal  # Annotated: 상태 업데이트 방식 지정, Literal: 값의 종류 제한
 
-# 프로젝트 루트를 path에 추가
+# 프로젝트 루트를 경로에 추가하여 내부 모듈(config, utils)을 불러올 수 있게 함
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.tools import tool
-from langgraph.graph import StateGraph, MessagesState, START, END
-from langgraph.prebuilt import ToolNode, tools_condition
+# LangChain: 대화 메시지 구조 및 도구 정의
+from langchain_core.messages import HumanMessage, SystemMessage  # Human: 사용자 메시지, System: AI 지침
+from langchain_core.tools import tool  # 파이썬 함수를 AI 도구로 변환하는 데코레이터
 
-from config.settings import get_settings
-from utils.llm_factory import get_llm, log_llm_error
+# LangGraph: 그래프 기반 에이전트 설계 및 실행
+from langgraph.graph import StateGraph, MessagesState, START, END  # 그래프 빌더, 표준 상태, 시작/종료 지점
+from langgraph.prebuilt import ToolNode, tools_condition  # 표준 도구 실행 노드 및 자동 라우팅 조건
+
+# 프로젝트 유틸리티: 설정 로드 및 LLM 생성 팩토리
+from config.settings import get_settings  # 중앙 설정(API 키, 모델명 등) 로드
+from utils.llm_factory import get_llm, log_llm_error  # LLM 인스턴스 생성 및 오류 로깅 유틸리티
 
 
 # =============================================================================

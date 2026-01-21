@@ -89,7 +89,6 @@ builder.add_edge("rewrite_query", "retrieve")
 
 ---
 
-<<<<<<< HEAD
 ## 비용과 성능 트레이드오프
 
 | 항목 | Naive RAG | Advanced RAG |
@@ -160,12 +159,13 @@ Advanced RAG를 익혔다면 다음 상세 예제로 심화 학습하세요:
 
 ---
 
+## 💻 전체 코드 확인
+[`examples/04_advanced_rag.py`](../examples/04_advanced_rag.py) 파일을 참고하세요.
+
+---
+
 ## 참고 자료
 
 - [Self-RAG 논문](https://arxiv.org/abs/2310.11511)
 - [Corrective RAG 논문](https://arxiv.org/abs/2401.15884)
 - [LangGraph RAG 튜토리얼](https://langchain-ai.github.io/langgraph/)
-=======
-## 💻 전체 코드 확인
-[`examples/04_advanced_rag.py`](../examples/04_advanced_rag.py) 파일을 참고하세요.
->>>>>>> 62093943b002f40b7b25c0a0ab1eab8af9165336

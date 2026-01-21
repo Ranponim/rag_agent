@@ -18,17 +18,19 @@ import sys
 from pathlib import Path
 from typing import TypedDict, List
 
-# 프로젝트 루트를 path에 추가
+# 프로젝트 루트를 경로에 추가하여 내부 모듈(config, utils)을 불러올 수 있게 함
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from langchain_core.documents import Document
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import JsonOutputParser
-from langgraph.graph import StateGraph, START, END
+# LangChain: 엔티티 추출 및 문서 검색 관련
+from langchain_core.documents import Document  # 검색된 데이터의 표준 문서 객체
+from langchain_core.prompts import ChatPromptTemplate  # 쿼리 분석용 프롬프트 설계도
+from langchain_core.output_parsers import JsonOutputParser  # 추출된 엔티티를 파이썬 리스트로 변환
+from langgraph.graph import StateGraph, START, END  # 병렬 실행 흐름 제어를 위한 그래프 구성 도구
 
-from config.settings import get_settings
-from utils.llm_factory import get_llm, get_embeddings, log_llm_error
-from utils.vector_store import VectorStoreManager
+# 프로젝트 유틸리티
+from config.settings import get_settings  # 설정 정보 로드
+from utils.llm_factory import get_llm, get_embeddings, log_llm_error  # LLM/임베딩 생성 및 오류 기록
+from utils.vector_store import VectorStoreManager  # 벡터 DB 검색 매니저
 
 
 # =============================================================================

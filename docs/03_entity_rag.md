@@ -74,5 +74,23 @@ chain = prompt | llm | JsonOutputParser()
 
 ---
 
+---
+
+## 🔗 상세 예제
+
+Entity RAG를 익혔다면 다음 상세 예제로 심화 학습하세요:
+
+| 예제 | 주제 | 학습 내용 |
+|------|------|----------|
+| [03a. Knowledge Graph RAG](03a_knowledge_graph_rag.md) | 지식 그래프 | 엔티티 간 관계 기반 검색 (예정) |
+
+---
+
 ## 💻 전체 코드 확인
 [`examples/03_entity_rag.py`](../examples/03_entity_rag.py) 파일을 참고하세요.
+
+---
+
+## 다음 단계
+
+➡️ [04. Advanced RAG](04_advanced_rag.md) - 자가 수정 RAG 파이프라인 구현

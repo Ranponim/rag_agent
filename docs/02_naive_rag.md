@@ -72,7 +72,6 @@ def generate(state: RAGState):
 
 ---
 
-<<<<<<< HEAD
 ## 실행 결과
 
 ### 테스트 쿼리
@@ -129,10 +128,11 @@ documents = loader.load()
 
 ---
 
+## 💻 전체 코드 확인
+[`examples/02_naive_rag.py`](../examples/02_naive_rag.py) 파일을 참고하세요.
+
+---
+
 ## 다음 단계
 
 ➡️ [03. Entity RAG](03_entity_rag.md) - 엔티티 기반 하이브리드 검색
-=======
-## 💻 전체 코드 확인
-[`examples/02_naive_rag.py`](../examples/02_naive_rag.py) 파일을 참고하세요.
->>>>>>> 62093943b002f40b7b25c0a0ab1eab8af9165336

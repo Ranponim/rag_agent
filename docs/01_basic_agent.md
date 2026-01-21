@@ -81,7 +81,6 @@ builder.add_node("tools", ToolNode(tools))
 
 ---
 
-<<<<<<< HEAD
 ## 실행 결과
 
 ### 테스트 1: 도구 사용 (날씨)
@@ -159,10 +158,11 @@ for step, state in enumerate(graph.stream(initial_state, stream_mode="values")):
 
 ---
 
+## 💻 전체 코드 확인
+[`examples/01_basic_agent.py`](../examples/01_basic_agent.py) 파일을 참고하세요.
+
+---
+
 ## 다음 단계
 
 ➡️ [02. Naive RAG](02_naive_rag.md) - 기본 RAG 파이프라인 구현
-=======
-## 💻 전체 코드 확인
-[`examples/01_basic_agent.py`](../examples/01_basic_agent.py) 파일을 참고하세요.
->>>>>>> 62093943b002f40b7b25c0a0ab1eab8af9165336

@@ -18,16 +18,20 @@ import sys
 from pathlib import Path
 from typing import TypedDict, List, Annotated
 
-# 프로젝트 루트를 path에 추가
+# 프로젝트 루트를 경로에 추가하여 내부 모듈(config, utils)을 불러올 수 있게 함
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from langchain_core.documents import Document
-from langchain_core.prompts import ChatPromptTemplate
-from langgraph.graph import StateGraph, START, END
+# LangChain: RAG 구현을 위한 문서 및 프롬프트 구조
+from langchain_core.documents import Document  # 검색된 데이터의 표준 문서 객체
+from langchain_core.prompts import ChatPromptTemplate  # LLM에 전달할 채팅 프롬프트 설계도
 
-from config.settings import get_settings
-from utils.llm_factory import get_llm, get_embeddings, log_llm_error
-from utils.vector_store import VectorStoreManager
+# LangGraph: 워크플로우 제어
+from langgraph.graph import StateGraph, START, END  # 그래프 빌더 및 실행 흐름 제어 포인트
+
+# 프로젝트 유틸리티: 설정 및 공통 매니저
+from config.settings import get_settings  # 중앙 설정 로드
+from utils.llm_factory import get_llm, get_embeddings, log_llm_error  # LLM/임베딩 생성 및 오류 기록
+from utils.vector_store import VectorStoreManager  # 벡터 DB(Chroma) 관리 및 검색 전용 클래스
 
 
 # =============================================================================
