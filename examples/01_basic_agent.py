@@ -21,6 +21,15 @@ from typing import Annotated, Literal  # Annotated: 상태 업데이트 방식 �
 # 프로젝트 루트를 경로에 추가하여 내부 모듈(config, utils)을 불러올 수 있게 함
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# 🔍 LangChain DEBUG 로깅 활성화 - LLM과 주고받는 raw 메시지 확인
+import langchain
+langchain.debug = True  # 전체 체인 실행 로그
+# 또는 더 상세한 로그:
+# import logging
+# logging.getLogger("langchain").setLevel(logging.DEBUG)
+# logging.getLogger("openai").setLevel(logging.DEBUG)
+# logging.getLogger("httpx").setLevel(logging.DEBUG)
+
 # LangChain: 대화 메시지 구조 및 도구 정의
 from langchain_core.messages import HumanMessage, SystemMessage  # Human: 사용자 메시지, System: AI 지침
 from langchain_core.tools import tool  # 파이썬 함수를 AI 도구로 변환하는 데코레이터
