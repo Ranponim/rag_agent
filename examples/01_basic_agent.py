@@ -32,6 +32,7 @@ from langgraph.prebuilt import ToolNode, tools_condition  # 표준 도구 실행
 # 프로젝트 유틸리티: 설정 로드 및 LLM 생성 팩토리
 from config.settings import get_settings  # 중앙 설정(API 키, 모델명 등) 로드
 from utils.llm_factory import get_llm, log_llm_error  # LLM 인스턴스 생성 및 오류 로깅 유틸리티
+from utils.harmony_parser import parse_harmony_tool_call  # GPT-OSS Harmony 포맷 파서
 
 
 # =============================================================================
@@ -107,6 +108,12 @@ def agent_node(state: MessagesState):
         except json.JSONDecodeError:
             print(f"📌 content는 JSON이 아님 (일반 텍스트)")
     print(f"{'='*60}\n")
+    
+    # 🔧 GPT-OSS Harmony 포맷 파싱: content의 JSON을 tool_calls로 변환
+    response = parse_harmony_tool_call(response, tools)
+    
+    if response.tool_calls:
+        print(f"🔧 [HARMONY] tool_calls 변환 완료: {[tc['name'] for tc in response.tool_calls]}")
     
     # 새로운 메시지만 반환 (MessagesState가 자동으로 append 처리)
     return {"messages": [response]}
