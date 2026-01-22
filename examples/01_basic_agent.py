@@ -75,6 +75,8 @@ def agent_node(state: MessagesState):
     - bind_tools로 도구 정보 주입
     - state["messages"] 전체를 전달하여 문맥 유지
     """
+    import json
+    
     llm = get_llm()
     llm_with_tools = llm.bind_tools(tools)
     
@@ -87,6 +89,24 @@ def agent_node(state: MessagesState):
     
     # LLM 호출
     response = llm_with_tools.invoke(messages)
+    
+    # 🔍 디버깅 로그: LLM 응답 상세 분석
+    print(f"\n{'='*60}")
+    print(f"🔍 [DEBUG] LLM 응답 분석")
+    print(f"{'='*60}")
+    print(f"📌 response type: {type(response).__name__}")
+    print(f"📌 response.content: {repr(response.content)}")
+    print(f"📌 response.tool_calls: {response.tool_calls}")
+    print(f"📌 response.additional_kwargs: {json.dumps(response.additional_kwargs, indent=2, ensure_ascii=False, default=str)}")
+    
+    # content가 JSON인지 확인
+    if response.content and isinstance(response.content, str):
+        try:
+            parsed = json.loads(response.content)
+            print(f"📌 content JSON 파싱 결과: {json.dumps(parsed, indent=2, ensure_ascii=False)}")
+        except json.JSONDecodeError:
+            print(f"📌 content는 JSON이 아님 (일반 텍스트)")
+    print(f"{'='*60}\n")
     
     # 새로운 메시지만 반환 (MessagesState가 자동으로 append 처리)
     return {"messages": [response]}
@@ -145,20 +165,12 @@ def run_agent(query: str):
     print('='*60)
     
     try:
-        # 스트리밍 모드로 실행하여 과정 시각화
-        events = graph.stream(
-            {"messages": [HumanMessage(content=query)]},
-            stream_mode="values"
+        # invoke 모드로 실행 (스트리밍 대신)
+        result = graph.invoke(
+            {"messages": [HumanMessage(content=query)]}
         )
         
-        final_msg = None
-        for event in events:
-            if "messages" in event:
-                final_msg = event["messages"][-1]
-                # 도구 호출이 아닌 경우에만 출력 (너무 시끄러울 수 있음)
-                if not (hasattr(final_msg, "tool_calls") and final_msg.tool_calls):
-                    # print(f"🤖 Agent: {final_msg.content}")
-                    pass
+        final_msg = result["messages"][-1] if result.get("messages") else None
         
         if final_msg:
              print(f"\n🤖 최종 답변: {final_msg.content}")
