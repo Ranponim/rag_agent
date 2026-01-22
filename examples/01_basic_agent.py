@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # 🔍 LangChain DEBUG 로깅 활성화 - LLM과 주고받는 raw 메시지 확인
 import langchain
-langchain.debug = True  # 전체 체인 실행 로그
+langchain.debug = False  # 너무 양이 많으면 False로 변경하세요
 # 또는 더 상세한 로그:
 # import logging
 # logging.getLogger("langchain").setLevel(logging.DEBUG)

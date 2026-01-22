@@ -77,12 +77,13 @@ def parse_harmony_tool_call(
     
     logger.info(f"🔧 Harmony tool call 파싱 성공: {tool_name}({tool_args})")
     
-    # 새 AIMessage 생성 (content는 비우고 tool_calls 추가)
+    # 새 AIMessage 생성
+    # additional_kwargs에 들어있는 "refusal": null 등이 vLLM 서버에서 오류를 일으킬 수 있으므로 비움
     return AIMessage(
-        content="",  # tool call 시 content는 비움
+        content="", 
         tool_calls=[tool_call],
-        additional_kwargs=response.additional_kwargs,
-        response_metadata=getattr(response, 'response_metadata', {}),
+        # additional_kwargs는 비워서 전송 시 문제를 방지함
+        additional_kwargs={}, 
         id=response.id
     )
 
