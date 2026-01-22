@@ -11,7 +11,7 @@ import logging
 import uuid
 from typing import List, Any, Optional, Union
 
-from langchain_core.messages import AIMessage, ToolMessage, HumanMessage, BaseMessage
+from langchain_core.messages import AIMessage, ToolMessage, HumanMessage, SystemMessage, BaseMessage
 from langchain_core.tools import BaseTool
 
 logger = logging.getLogger(__name__)
