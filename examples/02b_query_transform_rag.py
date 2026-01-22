@@ -1,331 +1,293 @@
 # -*- coding: utf-8 -*-
+# 이 파일은 UTF-8 인코딩을 사용하여 한글이 깨지지 않도록 설정합니다. (초심자용 상세 주석 버전)
+
 """
-02b. Query Transform RAG - 쿼리 변환 RAG
+============================================================================
+📚 02b. Query Transform RAG - 질문(Query)을 더 똑똑하게 바꿔서 검색하기
+============================================================================
 
-이 예제는 사용자 쿼리를 변환하여 검색 효율을 높이는 RAG를 구현합니다.
-HyDE(Hypothetical Document Embeddings)와 Multi-Query 기법을 사용합니다.
+사용자가 대충 물어봐도 AI가 그 질문을 검색하기 좋은 형태로 '변신(Transform)'시켜
+더 정확한 정보를 찾아내는 고급 기술들을 배웁니다.
 
-학습 목표:
-    1. HyDE: 가상 문서 생성 후 검색
-    2. Multi-Query: 쿼리를 여러 변형으로 확장
-    3. 쿼리 분해: 복잡한 질문을 단순한 질문들로 분해
-    4. 결과 퓨전
-
-실행: python examples/02b_query_transform_rag.py
+🎯 핵심 학습 포인트:
+    1. HyDE: 질문에 대한 '가짜 대답'을 먼저 상상해보고, 그 상상을 바탕으로 검색합니다.
+    2. Multi-Query: 질문 하나를 3~4개의 다양한 표현으로 바꿔서 그물망을 넓게 펼칩니다.
+    3. 병렬 검색: 여러 갈래의 검색을 동시에 진행하여 시간을 단축하고 정확도를 높입니다.
 """
 
-import sys
-from pathlib import Path
-from typing import TypedDict, List
+# =============================================================================
+# 📦 필수 라이브러리 임포트 (도구 가방 챙기기)
+# =============================================================================
 
+import sys                              # 시스템 환경 제어
+from pathlib import Path                # 파일 경로 처리
+from typing import TypedDict, List      # 데이터 형식 정의
+
+# 프로젝트 최상단 폴더를 경로에 추가하여 config, utils 등을 불러옵니다.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# LangChain의 문서 형식과 지시서(프롬프트) 도구
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
+
+# LangGraph의 순서도(그래프) 제작 도구
 from langgraph.graph import StateGraph, START, END
 
+# 프로젝트 전용 유틸리티들
 from config.settings import get_settings
-from utils.llm_factory import get_llm, get_embeddings
+from utils.llm_factory import get_llm, get_embeddings, log_llm_error
 from utils.vector_store import VectorStoreManager
 
 
 # =============================================================================
-# 1. State 정의
+# 📋 1. 상태(State) 정의하기 (공유 작업판)
 # =============================================================================
 
 class QueryTransformState(TypedDict):
-    """Query Transform RAG 상태"""
-    original_question: str               # 원본 질문
-    hyde_document: str                   # HyDE로 생성된 가상 문서
-    multi_queries: List[str]             # Multi-Query 변형들
-    hyde_results: List[Document]         # HyDE 검색 결과
-    multi_query_results: List[Document]  # Multi-Query 검색 결과
-    merged_documents: List[Document]     # 병합된 문서
-    context: str
-    answer: str
+    """이 RAG 시스템이 일하면서 적어둘 메모장 항목들입니다."""
+    original_question: str               # 사용자가 입력한 원래 질문
+    hyde_document: str                   # 1. HyDE 기법으로 만든 '가상 답변' 지문
+    multi_queries: List[str]             # 2. 여러 관점으로 다시 쓴 질문 목록
+    hyde_results: List[Document]         # HyDE로 찾아낸 실제 문서들
+    multi_query_results: List[Document]  # 변형 질문들로 찾아낸 실제 문서들
+    merged_documents: List[Document]     # 모든 검색 결과를 하나로 합친 목록
+    context: str                         # AI에게 보여줄 최종 참고 지문 합본
+    answer: str                          # AI가 최종적으로 작성한 답변
 
 
 # =============================================================================
-# 2. Vector Store 초기화
+# 🗄️ 2. 지식 창고(Vector Store) 초기화
 # =============================================================================
-
-_qt_vs: VectorStoreManager = None
 
 def get_qt_vs() -> VectorStoreManager:
-    global _qt_vs
-    if _qt_vs is None:
-        print("📚 Query Transform Vector Store 초기화...")
-        _qt_vs = VectorStoreManager(
-            embeddings=get_embeddings(),
-            collection_name="query_transform_rag",
-            chunk_size=300,
-        )
-        samples = [
-            "LangGraph는 LangChain 팀이 개발한 상태 기반 에이전트 프레임워크입니다. StateGraph를 사용하여 노드와 엣지를 정의합니다.",
-            "RAG(Retrieval-Augmented Generation)는 검색 증강 생성 기법으로, LLM에게 관련 문서를 컨텍스트로 제공합니다.",
-            "HyDE(Hypothetical Document Embeddings)는 질문에 대한 가상의 답변을 먼저 생성하고, 그 답변으로 검색하는 기법입니다.",
-            "Multi-Query는 하나의 질문을 여러 관점에서 재작성하여 검색 범위를 넓히는 기법입니다.",
-            "임베딩은 텍스트를 고차원 벡터로 변환하는 과정입니다. 유사한 의미를 가진 텍스트는 유사한 벡터를 갖습니다.",
-            "Vector Store는 벡터 데이터베이스로, 임베딩된 문서를 저장하고 유사도 검색을 수행합니다.",
-            "Query Decomposition은 복잡한 질문을 여러 단순한 질문으로 분해하는 기법입니다.",
-            "Reciprocal Rank Fusion은 여러 검색 결과를 통합할 때 순위를 고려하여 병합하는 알고리즘입니다.",
-        ]
-        _qt_vs.add_texts(texts=samples)
-        print(f"✅ {len(samples)}개 문서 추가")
-    return _qt_vs
+    """검색 변환 전용 지식 창고를 생성하고 기초 지식을 넣습니다."""
+    embeddings = get_embeddings() # 글자를 숫자로 바꾸는 엔진
+    # 'query_transform_rag'라는 이름의 전용 창고를 마련합니다.
+    manager = VectorStoreManager(embeddings=embeddings, collection_name="query_transform_rag")
+
+    # 검색 연습을 위한 풍부한 지식들입니다.
+    samples = [
+        "LangGraph는 AI 에이전트의 복잡한 흐름을 제어하는 프레임워크입니다.",
+        "RAG는 검색 증강 생성의 약자로, 외부 정보를 가져와 AI 답변을 보강합니다.",
+        "HyDE는 질문에 대한 가상 답변을 먼저 만들고 검색하는 검색 도우미 기술입니다.",
+        "Multi-Query는 하나의 질문을 여러 갈래로 넓혀서 검색 범위를 확장합니다.",
+        "임베딩은 문장을 고차원 숫자로 바꿔서 의미적 유사도를 측정하게 해줍니다.",
+    ]
+    # 지식 항아리에 지식들을 담습니다.
+    manager.add_texts(texts=samples)
+    return manager
 
 
 # =============================================================================
-# 3. 노드 함수
+# 🔧 3. 각 단계(Node)에서 하는 일 정의하기
 # =============================================================================
 
 def generate_hyde_document(state: QueryTransformState) -> dict:
-    """
-    HyDE: 가상 문서 생성
-    
-    질문에 대한 가상의 답변을 먼저 생성합니다.
-    이 답변은 실제 문서와 유사한 어휘를 포함할 가능성이 높아
-    임베딩 기반 검색 효율이 높아집니다.
-    """
-    print(f"\n🔮 [HyDE] 가상 문서 생성 중...")
+    """[경로 A-1] HyDE 가상 문서 만들기: '답변은 이럴 거야'라고 상상하기"""
+    print(f"\n🔮 [HyDE] 질문에 대한 '가상의 정답'을 상상해서 써보는 중...")
     
     llm = get_llm()
-    
+    # AI에게 가짜 답변을 아주 유식하게 써달라고 부탁합니다.
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """당신은 질문에 대해 상세한 설명을 제공하는 전문가입니다.
-다음 질문에 대해 마치 교과서나 문서에 있을 법한 상세한 답변을 작성하세요.
-실제로 정확한지 모르더라도, 가능한 전문적인 어휘를 사용하세요."""),
+        ("system", "당신은 지식 백과사전 편집자입니다. 질문에 대해 아주 상세하고 전문적인 '가상 답변'을 한 문단으로 작성하세요."),
         ("human", "{question}"),
     ])
     
+    # AI가 상상한 답변을 생성합니다.
     response = (prompt | llm).invoke({"question": state["original_question"]})
-    hyde_doc = response.content
+    print(f"   → 가상 답변 상상 완료! 이를 바탕으로 검색을 시작합니다.")
     
-    print(f"   → 가상 문서: {hyde_doc[:100]}...")
-    
-    return {"hyde_document": hyde_doc}
+    # 생성된 가상 답변을 'hyde_document' 칸에 적습니다.
+    return {"hyde_document": response.content}
 
 
 def generate_multi_queries(state: QueryTransformState) -> dict:
-    """
-    Multi-Query: 쿼리 변형 생성
-    
-    원본 질문을 다양한 관점에서 재작성하여
-    검색 범위를 넓힙니다.
-    """
-    print(f"\n🔄 [Multi-Query] 쿼리 변형 생성 중...")
+    """[경로 B-1] Multi-Query 만들기: 질문을 여러 방식으로 다시 쓰기"""
+    print(f"\n🔄 [Multi-Query] 질문을 3가지 다른 표현으로 변형하는 중...")
     
     llm = get_llm()
-    
+    # 질문의 의미는 같지만 단어 구성을 다르게 하여 검색 그물을 넓힙니다.
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """당신은 검색 쿼리 전문가입니다.
-주어진 질문을 3가지 다른 관점에서 재작성하세요.
-각 질문은 같은 정보를 찾지만 다른 표현을 사용해야 합니다.
-
-형식:
-1. [첫 번째 변형]
-2. [두 번째 변형]
-3. [세 번째 변형]"""),
+        ("system", "원본 질문을 바탕으로 검색에 도움이 될만한 변형 질문 3개를 만드세요. 한 줄에 하나씩만 쓰세요."),
         ("human", "원본 질문: {question}"),
     ])
     
     response = (prompt | llm).invoke({"question": state["original_question"]})
     
-    # 응답에서 질문들 추출
-    lines = response.content.strip().split("\n")
-    queries = []
-    for line in lines:
-        line = line.strip()
-        if line and (line[0].isdigit() or line.startswith("-")):
-            # 번호나 대시 제거
-            query = line.lstrip("0123456789.-) ").strip()
-            if query:
-                queries.append(query)
+    # AI의 답변을 줄 단위로 쪼개 리스트로 만듭니다.
+    queries = [q.strip() for q in response.content.split("\n") if q.strip()]
+    # 원본 질문까지 포함해서 총 4개의 질문 리스트를 확보합니다.
+    final_queries = [state["original_question"]] + queries[:3]
     
-    # 원본 질문도 포함
-    queries = [state["original_question"]] + queries[:3]
-    
-    print(f"   → 쿼리 변형들:")
-    for i, q in enumerate(queries):
-        print(f"      [{i+1}] {q}")
-    
-    return {"multi_queries": queries}
+    print(f"   → 확장된 질문 그물: {final_queries}")
+    # 여러 질문들을 'multi_queries' 칸에 기록합니다.
+    return {"multi_queries": final_queries}
 
 
 def search_with_hyde(state: QueryTransformState) -> dict:
-    """HyDE 문서로 검색"""
-    print(f"\n🔍 [HyDE 검색] 가상 문서로 검색 중...")
-    
+    """[경로 A-2] 상상한 답변(HyDE)과 가장 비슷한 진짜 문서 찾기"""
+    print(f"🔍 [HyDE 검색] AI의 상상력과 가장 일치하는 진짜 자료를 찾는 중...")
     vs = get_qt_vs()
+    # 가짜 답변을 쿼리로 써서 실제 지식 창고를 뒤집니다.
     docs = vs.search(query=state["hyde_document"], k=3)
-    
-    print(f"   → {len(docs)}개 문서 검색됨")
-    
     return {"hyde_results": docs}
 
 
 def search_with_multi_queries(state: QueryTransformState) -> dict:
-    """Multi-Query로 검색"""
-    print(f"\n🔍 [Multi-Query 검색] 여러 쿼리로 검색 중...")
-    
+    """[경로 B-2] 4개의 질문 그물로 싹쓸이 검색하기"""
+    print(f"🔍 [Multi-Query 검색] {len(state['multi_queries'])}개의 질문 그물로 넓게 뒤지는 중...")
     vs = get_qt_vs()
+    
     all_docs = []
-    seen_contents = set()
+    seen_content = set() # 중복된 내용을 걸러내기 위한 장치
     
-    for i, query in enumerate(state["multi_queries"]):
-        docs = vs.search(query=query, k=2)
-        for doc in docs:
-            if doc.page_content not in seen_contents:
-                all_docs.append(doc)
-                seen_contents.add(doc.page_content)
-        print(f"   쿼리 [{i+1}]: {len(docs)}개")
-    
-    print(f"   → 총 {len(all_docs)}개 고유 문서")
-    
+    # 각 질문마다 돌아가며 검색합니다.
+    for q in state["multi_queries"]:
+        docs = vs.search(query=q, k=2)
+        for d in docs:
+            # 이미 찾은 내용이 아니면 목록에 담습니다.
+            if d.page_content not in seen_content:
+                all_docs.append(d)
+                seen_content.add(d.page_content)
+                
     return {"multi_query_results": all_docs}
 
 
 def merge_results(state: QueryTransformState) -> dict:
-    """
-    결과 병합 (Reciprocal Rank Fusion 개념 적용)
+    """[통합 단계] 두 경로(A, B)에서 얻은 문서들을 하나로 예쁘게 합치기"""
+    print(f"\n🔀 [결과 합치기] 모든 검색 경로의 결과를 통합하고 중복을 제거합니다.")
     
-    HyDE와 Multi-Query 결과를 병합하고 중복 제거합니다.
-    """
-    print(f"\n🔀 [병합] 결과 통합 중...")
-    
-    # 두 결과 병합 (중복 제거)
     seen = set()
     merged = []
     
-    # HyDE 결과 먼저 (보통 더 정확)
-    for doc in state.get("hyde_results", []):
+    # HyDE 검색 결과와 Multi-Query 검색 결과를 한 통에 담습니다.
+    total_docs = state.get("hyde_results", []) + state.get("multi_query_results", [])
+    
+    for doc in total_docs:
         if doc.page_content not in seen:
             merged.append(doc)
             seen.add(doc.page_content)
     
-    # Multi-Query 결과 추가
-    for doc in state.get("multi_query_results", []):
-        if doc.page_content not in seen:
-            merged.append(doc)
-            seen.add(doc.page_content)
+    # 너무 복잡하면 상위 5개만 최종 후보로 정합니다.
+    final_docs = merged[:5]
+    print(f"   → 최종적으로 {len(final_docs)}개의 유니크한 지식 문서를 확보했습니다.")
     
-    # 최대 5개로 제한
-    merged = merged[:5]
+    # AI가 읽기 좋게 문장들을 합쳐서 컨텍스트로 만듭니다.
+    context = "\n\n".join([f"[참조{i+1}] {d.page_content}" for i, d in enumerate(final_docs)])
     
-    context = "\n\n".join([
-        f"[문서 {i+1}] {doc.page_content}"
-        for i, doc in enumerate(merged)
-    ])
-    
-    print(f"   → 최종 {len(merged)}개 문서")
-    
-    return {"merged_documents": merged, "context": context}
+    return {"merged_documents": final_docs, "context": context}
 
 
 def generate_answer(state: QueryTransformState) -> dict:
-    """답변 생성"""
-    print(f"\n💭 [생성] 답변 생성 중...")
+    """[마지막: 답변 쓰기] 풍부하게 모은 지식으로 완벽한 답장 쓰기"""
+    print("📝 [최종 답변] 정교하게 수집된 정보들을 바탕으로 답변을 작성합니다...")
     
     llm = get_llm()
-    
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """컨텍스트를 기반으로 질문에 답변하세요.
-
-컨텍스트:
-{context}"""),
-        ("human", "{question}"),
+        ("system", "당신은 도서관 사서처럼 정확한 정보만을 알려주는 AI 가이드입니다."),
+        ("human", "참조한 지식들:\n{context}\n\n사용자 질문: {question}"),
     ])
     
+    # 모든 정보를 종합하여 답변을 생성합니다.
     response = (prompt | llm).invoke({
         "context": state["context"],
         "question": state["original_question"]
     })
     
+    # 드디어 완성된 답변을 기록합니다.
     return {"answer": response.content}
 
 
 # =============================================================================
-# 4. 그래프 생성
+# 🔗 4. 전체적인 업무 흐름도(Graph) 조립하기
 # =============================================================================
 
-def create_query_transform_rag():
-    """
-    Query Transform RAG 그래프
+def create_query_transform_graph():
+    """병렬(동시) 검색이 가능한 고급 RAG 순서도를 만듭니다."""
+    # 우리가 만든 메모장(QueryTransformState)을 사용하는 도면을 펼칩니다.
+    builder = StateGraph(QueryTransformState)
     
-    구조:
-        START → generate_hyde ─────────→ search_hyde ──────┐
-              └→ generate_multi_queries → search_multi ────┴→ merge → generate → END
-    """
-    graph = StateGraph(QueryTransformState)
+    # 1. 일할 사람(노드)들을 이름표와 함께 등록합니다.
+    builder.add_node("gen_hyde", generate_hyde_document)
+    builder.add_node("gen_multi", generate_multi_queries)
+    builder.add_node("search_hyde", search_with_hyde)
+    builder.add_node("search_multi", search_with_multi_queries)
+    builder.add_node("merge", merge_results)
+    builder.add_node("generate", generate_answer)
     
-    # 노드 추가
-    graph.add_node("generate_hyde", generate_hyde_document)
-    graph.add_node("generate_multi_queries", generate_multi_queries)
-    graph.add_node("search_hyde", search_with_hyde)
-    graph.add_node("search_multi", search_with_multi_queries)
-    graph.add_node("merge", merge_results)
-    graph.add_node("generate", generate_answer)
+    # 2. 화살표를 이어줍니다. (START에서 두 갈래로 나뉩니다!)
+    builder.add_edge(START, "gen_hyde")             # A경로: HyDE 시작
+    builder.add_edge(START, "gen_multi")            # B경로: Multi-Query 시작
     
-    # 엣지 (병렬 쿼리 변환)
-    graph.add_edge(START, "generate_hyde")
-    graph.add_edge(START, "generate_multi_queries")
-    graph.add_edge("generate_hyde", "search_hyde")
-    graph.add_edge("generate_multi_queries", "search_multi")
-    graph.add_edge("search_hyde", "merge")
-    graph.add_edge("search_multi", "merge")
-    graph.add_edge("merge", "generate")
-    graph.add_edge("generate", END)
+    builder.add_edge("gen_hyde", "search_hyde")     # A경로 이어가기
+    builder.add_edge("gen_multi", "search_multi")   # B경로 이어가기
     
-    print("✅ Query Transform RAG 컴파일 완료!")
-    return graph.compile()
+    builder.add_edge("search_hyde", "merge")        # A결과를 합치기 단계로 보냄
+    builder.add_edge("search_multi", "merge")       # B결과도 합치기 단계로 보냄
+    
+    builder.add_edge("merge", "generate")           # 합쳐진 결과로 답변 시작
+    builder.add_edge("generate", END)               # 답변 끝!
+    
+    # 3. 조립 완료된 순서도를 실행 가능한 기계(Graph)로 만듭니다.
+    return builder.compile()
 
 
 # =============================================================================
-# 5. 실행
+# ▶️ 5. 실제로 돌려보기 (CLI 실행부)
 # =============================================================================
 
-def run_query_transform_rag(question: str) -> str:
-    graph = create_query_transform_rag()
-    
-    initial_state = {
-        "original_question": question,
-        "hyde_document": "",
-        "multi_queries": [],
-        "hyde_results": [],
-        "multi_query_results": [],
-        "merged_documents": [],
-        "context": "",
-        "answer": ""
-    }
-    
+def run_qt_rag(query: str, graph):
+    """질문을 입력하면 작동 과정을 보여주며 답변합니다."""
     print(f"\n{'='*60}")
-    print(f"🙋 질문: {question}")
-    print('='*60)
+    print(f"🙋 질문: {query}")
+    print(f"{'='*60}")
     
-    result = graph.invoke(initial_state)
-    
-    print(f"\n🤖 답변:\n{result['answer']}")
-    print('='*60)
-    
-    return result["answer"]
+    try:
+        # 가동 준비(입력값 세팅)
+        result = graph.invoke({
+            "original_question": query,
+            "hyde_document": "",
+            "multi_queries": [],
+            "hyde_results": [],
+            "multi_query_results": [],
+            "merged_documents": [],
+            "context": "",
+            "answer": ""
+        })
+        
+        # 탄생한 답변을 보여줍니다.
+        print(f"\n🤖 AI 가이드의 답변:\n{result['answer']}")
+        
+    except Exception as e:
+        log_llm_error(e)
+        print(f"❌ 도중에 시스템 오류가 났습니다: {e}")
 
 
 if __name__ == "__main__":
-    from utils.llm_factory import log_llm_error
+    print("\n" + "🌟 Query Transform RAG 시스템을 가동합니다! 🌟")
+    print("질문을 어떻게 바꿔서 검색하는지 과정을 지켜보세요.")
+    print("- 종료하려면 'q' 혹은 'exit'를 입력하세요.\n")
     
-    print("\n" + "="*60)
-    print("Query Transform RAG 예제")
-    print("="*60)
+    # 1. 흐름도 기계를 한 번 만들어 둡니다.
+    qt_graph = create_query_transform_graph()
     
-    queries = [
-        "HyDE가 뭐야?",
-        "RAG에서 쿼리 변환은 어떤 종류가 있어?",
-    ]
-    
-    for query in queries:
+    # 2. 반복해서 질문을 받습니다.
+    while True:
         try:
-            run_query_transform_rag(query)
+            line = input("🙋 검색하고 싶은 것을 적어주세요: ").strip()
+            
+            if not line: continue
+                
+            if line.lower() in ("quit", "exit", "q"):
+                print("👋 이용해 주셔서 감사합니다! 좋은 하루 되세요.")
+                break
+                
+            # 실행!
+            run_qt_rag(line, qt_graph)
+            
+        except KeyboardInterrupt:
+            print("\n👋 급히 프로그램을 종료합니다.")
+            break
         except Exception as e:
-            log_llm_error(e)
-            print(f"❌ 오류: {e}")
-        print()
+            print(f"\n⚠️ 예기치 못한 에러: {e}")
+            break

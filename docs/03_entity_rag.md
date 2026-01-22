@@ -11,6 +11,28 @@
 
 ---
 
+## 🖥️ CLI 실행 방법
+
+이 예제는 **대화형 CLI 모드**로 실행됩니다.
+
+```bash
+python examples/03_entity_rag.py
+```
+
+```
+LangGraph Entity RAG Example (Parallel Execution)
+CLI 모드로 실행됩니다. 질문을 입력하세요.
+종료하려면 'quit', 'exit', 또는 'q'를 입력하세요.
+
+🙋 질문을 입력하세요: LangGraph와 LangChain에 대해 알려줘
+```
+
+### 종료 방법
+- `quit`, `exit`, 또는 `q` 입력
+- `Ctrl+C` 키 입력
+
+---
+
 ## 🏗️ 그래프 구조
 
 `Extract Entity` 노드 이후, `Entity Search`와 `Semantic Search`가 동시에 실행됩니다.

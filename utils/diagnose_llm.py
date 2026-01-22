@@ -103,5 +103,30 @@ def diagnose():
     except Exception as e:
         print(f"   (오타 URL 연결 실패 - 정상: {e})")
 
+    # 4. LangChain Streaming 테스트
+    print("\n[4] LangChain 스트리밍 테스트")
+    try:
+        llm = ChatOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            model=settings.openai_model,
+            temperature=0,
+            max_retries=1,
+            streaming=True
+        )
+        
+        print("   스트리밍 시작 (응답이 한 글자씩 표시되어야 함):")
+        print("   > ", end="", flush=True)
+        
+        for chunk in llm.stream("Tell me a short sentence about why coding is fun."):
+            content = chunk.content
+            if content:
+                print(content, end="", flush=True)
+        
+        print("\n   ✅ 스트리밍 완료!")
+            
+    except Exception as e:
+        print(f"\n   ❌ 스트리밍 오류: {e}")
+
 if __name__ == "__main__":
     diagnose()

@@ -11,6 +11,28 @@
 
 ---
 
+## 🖥️ CLI 실행 방법
+
+이 예제는 **대화형 CLI 모드**로 실행됩니다.
+
+```bash
+python examples/04_advanced_rag.py
+```
+
+```
+LangGraph Advanced RAG Example (Self-Correction)
+CLI 모드로 실행됩니다. 질문을 입력하세요.
+종료하려면 'quit', 'exit', 또는 'q'를 입력하세요.
+
+🙋 질문을 입력하세요: Self-RAG가 뭐야?
+```
+
+### 종료 방법
+- `quit`, `exit`, 또는 `q` 입력
+- `Ctrl+C` 키 입력
+
+---
+
 ## 🏗️ 그래프 구조
 
 `Grade` 노드에서 분기(Branching)가 발생합니다. 관련이 없으면 `Rewrite` 노드를 거쳐 다시 `Retrieve`로 돌아갑니다.

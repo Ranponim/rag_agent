@@ -13,6 +13,28 @@
 
 ---
 
+## 🖥️ CLI 실행 방법
+
+이 예제는 **대화형 CLI 모드**로 실행됩니다.
+
+```bash
+python examples/04a_adaptive_rag.py
+```
+
+```
+Adaptive RAG 예제 (CLI 모드)
+질문의 난이도를 분석하여 가장 효율적인 방식으로 대답합니다.
+종료하려면 'quit' 또는 'exit'를 입력하세요.
+
+🙋 질문을 입력하세요: RAG와 파인튜닝의 차이는?
+```
+
+### 종료 방법
+- `quit`, `exit`, 또는 `q` 입력
+- `Ctrl+C` 키 입력
+
+---
+
 ## 🔑 핵심 개념
 
 ### 복잡도별 전략
@@ -42,33 +64,34 @@ graph TD
 
 ## 📐 핵심 코드
 
-### 복잡도 분류
+### 복잡도 분류 (심사위원 AI)
 ```python
-def classify_query_node(state):
-    prompt = """질문의 복잡도를 분류하세요.
-    - simple: 간단한 정의
-    - moderate: 일반적인 정보 요청
-    - complex: 분석, 비교, 다단계 추론"""
+def classify_query_node(state: AdaptiveRAGState) -> dict:
+    """[판별 단계] 질문을 읽고 '쉬움/보통/어려움' 중 하나로 분류합니다."""
+    # AI 심사위원에게 질문의 난이도를 판단해달라고 지시합니다.
+    # 1. "simple": 인사, 상식 질문
+    # 2. "moderate": 일반 검색이 필요한 질문
+    # 3. "complex": 다각도 분석이 필요한 복잡한 질문
+    response = llm.invoke(...)
     
-    complexity = llm.invoke({"question": state["question"]})
-    return {"query_complexity": complexity}
+    return {"query_complexity": response.content.lower().strip()}
 ```
 
-### 복잡 전략 (다단계 RAG)
+### 복잡 전략 (다단계 정밀 RAG)
 ```python
-def complex_strategy_node(state):
-    # 1단계: 질문 분해
-    sub_questions = decompose_question(state["question"])
+def complex_strategy_node(state: AdaptiveRAGState) -> dict:
+    """[전략 3: 어려운 질문] 질문을 쪼개서 깊게 조사하고 분석 보고서를 만듭니다."""
+    # 1. 어려운 질문을 해결하기 위한 2개의 세부 질문을 생성합니다.
+    sub_queries = llm.invoke(...) 
     
-    # 2단계: 각 하위 질문에 대해 검색
-    all_docs = []
-    for sq in sub_questions:
+    # 2. 메인 질문 + 세부 질문들로 지식 창고를 각각 검색합니다.
+    for sq in sub_queries + [state["question"]]:
         docs = vs.search(query=sq, k=2)
-        all_docs.extend(docs)
+        all_context.extend(docs)
     
-    # 3단계: 통합 답변 생성
-    answer = synthesize(original_question, all_docs)
-    return {"answer": answer}
+    # 3. 모은 모든 정보를 합쳐서 심층 답변을 생성합니다.
+    res = llm.invoke(...)
+    return {"strategy_used": "Complex (다단계 정밀 RAG)", "answer": res.content}
 ```
 
 ---

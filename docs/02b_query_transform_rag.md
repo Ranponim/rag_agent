@@ -12,6 +12,28 @@ HyDE와 Multi-Query를 사용해 쿼리를 변환하여 검색 효율을 높이�
 
 ---
 
+## 🖥️ CLI 실행 방법
+
+이 예제는 **대화형 CLI 모드**로 실행됩니다.
+
+```bash
+python examples/02b_query_transform_rag.py
+```
+
+```
+Query Transform RAG 예제 (CLI 모드)
+HyDE와 Multi-Query 기술을 사용하여 검색 정확도를 높입니다.
+종료하려면 'quit' 또는 'exit'를 입력하세요.
+
+🙋 어떤 것을 검색할까요?: HyDE 검색 기법이 뭐야?
+```
+
+### 종료 방법
+- `quit`, `exit`, 또는 `q` 입력
+- `Ctrl+C` 키 입력
+
+---
+
 ## 🔑 핵심 개념
 
 ### HyDE (Hypothetical Document Embeddings)
@@ -52,29 +74,34 @@ graph TD
 
 ## 📐 핵심 코드
 
-### HyDE
+### HyDE (가상 답변 상상하여 검색하기)
 ```python
-def generate_hyde_document(state):
-    prompt = "질문에 대한 상세한 답변을 작성하세요."
-    hyde_doc = llm.invoke({"question": state["question"]})
-    return {"hyde_document": hyde_doc}
+def generate_hyde_document(state: QueryTransformState) -> dict:
+    """[단계 1] '답변은 이럴 거야'라고 AI가 상상해서 답변 지문 만들기"""
+    # AI에게 가짜 답변을 상세히 써달라고 부탁합니다.
+    response = llm.invoke(...) 
+    return {"hyde_document": response.content}
 
-def search_with_hyde(state):
+def search_with_hyde(state: QueryTransformState) -> dict:
+    """[단계 2] 상상한 답변(HyDE)과 가장 비슷한 진짜 문서 찾기"""
+    # AI가 상상한 가짜 답변을 검색어로 써서 실제 지식 창고를 뒤집니다.
     docs = vs.search(query=state["hyde_document"], k=3)
     return {"hyde_results": docs}
 ```
 
-### Multi-Query
+### Multi-Query (질문을 다각도로 변형해서 검색하기)
 ```python
-def generate_multi_queries(state):
-    prompt = "질문을 3가지 다른 관점에서 재작성하세요."
-    queries = llm.invoke(state["question"])
-    return {"multi_queries": queries}
+def generate_multi_queries(state: QueryTransformState) -> dict:
+    """[단계 1] 질문을 3가지 다른 표현으로 변형하기"""
+    # 의미는 같지만 단어 구성을 다르게 하여 3개의 질문 리스트를 만듭니다.
+    response = llm.invoke(...)
+    return {"multi_queries": [original] + new_queries}
 
-def search_with_multi_queries(state):
-    all_docs = []
-    for query in state["multi_queries"]:
-        docs = vs.search(query=query, k=2)
+def search_with_multi_queries(state: QueryTransformState) -> dict:
+    """[단계 2] 여러 개의 질문으로 넓게 뒤지기"""
+    # 각 질문마다 돌아가며 검색하고 중복을 제거하여 모읍니다.
+    for q in state["multi_queries"]:
+        docs = vs.search(query=q, k=2)
         all_docs.extend(docs)
     return {"multi_query_results": deduplicate(all_docs)}
 ```

@@ -12,6 +12,55 @@ LangGraph의 가장 기본적인 구조와 표준 패턴을 학습하는 예제�
 
 ---
 
+## 🖥️ CLI 실행 방법
+
+이 예제는 **대화형 CLI 모드**로 실행됩니다. 질문을 자유롭게 입력할 수 있습니다.
+
+```bash
+python examples/01_basic_agent.py
+```
+
+```
+LangGraph Basic Agent (Standard Pattern)
+CLI 모드로 실행됩니다. 질문을 입력하세요.
+종료하려면 'quit', 'exit', 또는 'q'를 입력하세요.
+
+🙋 질문을 입력하세요: 서울 날씨 어때?
+```
+
+### 종료 방법
+- `quit`, `exit`, 또는 `q` 입력
+- `Ctrl+C` 키 입력
+
+---
+
+## 🔧 GPT-OSS (vLLM) Harmony 호환성
+
+이 예제는 **GPT-OSS (vLLM 기반 로컬 LLM)** 과의 호환성을 위한 기능이 포함되어 있습니다.
+
+### Harmony 포맷 파싱
+GPT-OSS는 도구 호출을 표준 형식이 아닌 Harmony 포맷으로 반환합니다:
+
+```python
+# 표준 OpenAI 형식
+response.tool_calls = [{"name": "get_weather", "args": {"city": "서울"}}]
+
+# GPT-OSS Harmony 형식 (content에 JSON)
+response.content = '{"city": "서울"}'
+```
+
+`parse_harmony_tool_call()` 함수가 이를 자동으로 변환합니다.
+
+### 히스토리 클리닝
+vLLM은 특정 메시지 형식을 거부할 수 있습니다. `clean_history_for_harmony()`가 이를 처리합니다:
+- `ToolMessage` → `HumanMessage`로 변환
+- 빈 `content`를 가진 `AIMessage` 보완
+
+> [!IMPORTANT]
+> **GPT-OSS (vLLM) 호환성**: 로컬 LLM 서버를 사용하는 경우 [Harmony 호환성 가이드](harmony_compatibility.md)를 참고하여 응답 파싱 및 메시지 정제를 적용하세요.
+
+---
+
 ## 🏗️ 그래프 구조
 
 전형적인 **ReAct(Reasoning + Acting)** 패턴입니다. 에이전트가 생각(LLM)하고 행동(Tool)하는 과정을 반복합니다.
@@ -70,14 +119,15 @@ builder.add_node("tools", ToolNode(tools))
 
 ---
 
-## 📝 실행 흐름
+## 📝 실행 흐름 (CLI 모드)
 
-1. **사용자**: "서울 날씨 어때?"
+1. **사용자**: CLI에서 "서울 날씨 어때?" 입력
 2. **Agent**: 질문 분석 → `get_weather('서울')` 도구 호출 결정 (AIMessage)
 3. **Condition**: 도구 호출이 있으므로 `Tools` 노드로 이동
 4. **Tools**: 함수 실행 → "맑음, 15°C" 반환 (ToolMessage)
 5. **Agent**: 도구 결과를 보고 최종 답변 생성 → "서울은 맑고 15도입니다."
 6. **Condition**: 도구 호출이 없으므로 `END`로 이동
+7. **CLI**: 다음 질문 입력 대기
 
 ---
 

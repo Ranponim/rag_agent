@@ -13,6 +13,35 @@ MemorySaver를 사용하여 대화 기록을 유지하고 세션을 관리하는
 
 ---
 
+## 🖥️ CLI 실행 방법
+
+이 예제는 **대화형 CLI 모드**로 실행됩니다.
+
+```bash
+python examples/01b_memory_agent.py
+```
+
+```
+Memory Agent 예제 (CLI 모드)
+이 Agent는 당신과 나눈 대화를 기억합니다.
+종료하려면 'quit' 또는 'exit'를 입력하세요.
+
+🙋 [Thread: user_session_01] 질문: 안녕, 내 이름은 철수야.
+🙋 [Thread: user_session_01] 질문: 내 이름이 뭐야?
+```
+
+### 특수 명령어
+- `/thread [세션ID]`: 대화 세션을 변경합니다. (예: `/thread room_02`)
+
+### 종료 방법
+- `quit`, `exit`, 또는 `q` 입력
+- `Ctrl+C` 키 입력
+
+---
+
+> [!IMPORTANT]
+> **GPT-OSS (vLLM) 호환성**: 로컬 LLM 서버를 사용하는 경우 [Harmony 호환성 가이드](harmony_compatibility.md)를 참고하여 응답 파싱 및 메시지 정제를 적용하세요.
+
 ## 🔑 핵심 개념
 
 ### MemorySaver
@@ -37,30 +66,30 @@ result = graph.invoke({"messages": [msg]}, config=config)
 ### 그래프 컴파일 (메모리 활성화)
 ```python
 def create_memory_agent():
-    graph = StateGraph(MessagesState)
+    """메모리 기능이 장착된 에이전트 순서도를 만듭니다."""
+    builder = StateGraph(MessagesState)
     
-    graph.add_node("agent", agent_node)
-    graph.add_node("tools", ToolNode(tools))
+    # ... 노드 및 엣지 추가 ...
     
-    graph.add_edge(START, "agent")
-    graph.add_conditional_edges("agent", should_continue)
-    graph.add_edge("tools", "agent")
-    
-    # ⭐ 핵심: MemorySaver로 상태 저장 활성화
+    # ⭐ 핵심: 대화 저장소(MemorySaver) 만들기
+    # 이 객체가 프로그램이 켜져 있는 동안 대화 내용을 기억해줍니다.
     memory = MemorySaver()
-    compiled = graph.compile(checkpointer=memory)
     
-    return compiled
+    # 그래프를 완성(컴파일)할 때 이 저장소를 'checkpointer'로 전달합니다.
+    return builder.compile(checkpointer=memory)
 ```
 
-### 세션별 대화
+### 세션별 대화 (thread_id 활용)
 ```python
-def chat(graph, thread_id: str, message: str):
+def run_chat(graph, thread_id: str, query: str):
+    """지정한 대화방 ID(thread_id)를 사용하여 대화를 나눕니다."""
+    # 같은 thread_id를 지정하면 LangGraph가 해당 ID의 이전 상태를 자동으로 로드합니다.
     config = {"configurable": {"thread_id": thread_id}}
     
+    # invoke(입력, 설정)을 통해 이전 기억을 불러와 대화를 진행합니다.
     result = graph.invoke(
-        {"messages": [HumanMessage(content=message)]},
-        config=config  # thread_id 지정
+        {"messages": [HumanMessage(content=query)]},
+        config=config
     )
     return result["messages"][-1].content
 ```

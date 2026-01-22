@@ -11,6 +11,28 @@
 
 ---
 
+## 🖥️ CLI 실행 방법
+
+이 예제는 **대화형 CLI 모드**로 실행됩니다.
+
+```bash
+python examples/02_naive_rag.py
+```
+
+```
+LangGraph Naive RAG Example
+CLI 모드로 실행됩니다. 질문을 입력하세요.
+종료하려면 'quit', 'exit', 또는 'q'를 입력하세요.
+
+🙋 질문을 입력하세요: LangGraph가 뭐야?
+```
+
+### 종료 방법
+- `quit`, `exit`, 또는 `q` 입력
+- `Ctrl+C` 키 입력
+
+---
+
 ## 🏗️ 그래프 구조
 
 검색 결과를 다음 노드로 전달하는 선형(Linear) 구조입니다.

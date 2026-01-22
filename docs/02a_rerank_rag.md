@@ -13,6 +13,28 @@ LLM 기반으로 검색된 문서를 재정렬(Rerank)하여 관련성을 높이
 
 ---
 
+## 🖥️ CLI 실행 방법
+
+이 예제는 **대화형 CLI 모드**로 실행됩니다.
+
+```bash
+python examples/02a_rerank_rag.py
+```
+
+```
+Rerank RAG 예제 (CLI 모드)
+정밀한 재정렬을 통해 답변 품질을 높이는 예제입니다.
+종료하려면 'quit' 또는 'exit'를 입력하세요.
+
+🙋 검색할 질문을 입력하세요: RAG에서 Reranking의 역할은?
+```
+
+### 종료 방법
+- `quit`, `exit`, 또는 `q` 입력
+- `Ctrl+C` 키 입력
+
+---
+
 ## 🔑 핵심 개념
 
 ### 왜 Rerank가 필요한가?
@@ -38,28 +60,32 @@ graph LR
 
 ## 📐 핵심 코드
 
-### 초기 검색 (Over-fetch)
+### 초기 검색 (Over-fetch: 일단 많이 찾기)
 ```python
-def retrieve_node(state):
-    # 최종 필요 개수(3)보다 많이 검색 (6개)
+def retrieve_node(state: RerankRAGState) -> dict:
+    """[1단계: 일단 많이 찾기] 필요 이상으로 넉넉하게 문서를 검색합니다."""
+    # 나중에 3개롤 걸러낼 예정이므로, 일단 6개를 넉넉히 찾아옵니다.
     docs = vs.search(query=state["question"], k=6)
+    
+    # 찾아온 것들을 'initial_documents' 칸에 보관합니다.
     return {"initial_documents": docs}
 ```
 
-### Rerank 노드
+### Rerank 노드 (정밀하게 다시 고르기)
 ```python
-def rerank_node(state):
-    prompt = """문서가 질문에 얼마나 관련있는지 0-10 점수로 평가하세요."""
-    
-    scored_docs = []
+def rerank_node(state: RerankRAGState) -> dict:
+    """[2단계: AI가 꼼꼼히 다시 고르기] 찾아온 것들 중 진짜 정답 후보를 골라냅니다."""
+    # AI 심사위원에게 문서의 관련성을 0~10점으로 평가해달라고 합니다.
+    # 1. 모든 문서에 대해 AI 점수를 매깁니다.
     for doc in state["initial_documents"]:
-        score = llm_evaluate(doc)  # 0-10 점수
+        score = llm.invoke(...) # AI 점수 산출
         scored_docs.append({"document": doc, "score": score})
     
-    # 점수 기준 정렬 후 상위 3개 선택
+    # 2. 점수가 높은 순으로 정렬하고 상위 3개만 딱 골라냅니다.
     scored_docs.sort(key=lambda x: x["score"], reverse=True)
-    top_docs = scored_docs[:3]
-    return {"reranked_documents": top_docs}
+    top_3 = scored_docs[:3]
+    
+    return {"reranked_documents": [d["document"] for d in top_3]}
 ```
 
 ---

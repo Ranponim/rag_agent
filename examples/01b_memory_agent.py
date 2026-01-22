@@ -1,240 +1,211 @@
 # -*- coding: utf-8 -*-
+# 이 파일은 UTF-8 인코딩을 사용하여 한글이 깨지지 않도록 설정합니다. (초심자용 상세 주석 버전)
+
 """
-01b. Memory Agent - 대화 기록을 유지하는 Agent
+============================================================================
+📚 01b. Memory Agent - 대화 기록을 유지하는 Agent
+============================================================================
 
-이 예제는 MemorySaver를 사용하여 대화 기록을 유지하고,
-thread_id로 여러 대화 세션을 관리하는 Agent를 구현합니다.
+이 예제는 MemorySaver를 사용하여 대화 기록을 컴퓨터 메모리에 기억하고,
+'대화방 ID(thread_id)'를 이용해 과거 대화를 이어가는 방법을 학습합니다.
 
-학습 목표:
-    1. MemorySaver 체크포인터 사용법
-    2. thread_id로 세션 분리
-    3. 대화 컨텍스트 유지
-    4. 이전 대화 참조
-
-실행: python examples/01b_memory_agent.py
+🎯 핵심 학습 포인트:
+    1. MemorySaver: 과거 대화 내용을 저장하는 '기억 저장소' 사용법.
+    2. thread_id: 여러 대화방을 구분하는 아이디 개념 이해.
+    3. AI가 예전 질문이나 내 이름을 기억하게 만드는 방법.
 """
 
-import sys
-from pathlib import Path
-from typing import Literal
+# =============================================================================
+# 📦 필수 라이브러리 임포트
+# =============================================================================
 
+import sys                              # 시스템 환경 제어
+from pathlib import Path                # 경로 관리
+from typing import Literal              # 특정 텍스트 타입 지정
+
+# 프로젝트 루트(최상위 폴더)를 경로에 추가하여 다른 폴더의 모듈을 불러올 수 있게 합니다.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# LangChain 메시지 형식 (사람, 시스템 메시지)
 from langchain_core.messages import HumanMessage, SystemMessage
+# 파이썬 함수를 AI용 도구로 변환
 from langchain_core.tools import tool
+
+# LangGraph의 핵심 요소와 메모리(MemorySaver) 모듈을 가져옵니다.
 from langgraph.graph import StateGraph, MessagesState, START, END
-from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.checkpoint.memory import MemorySaver  # 대화 내용을 메모리에 임시 저장하는 도구
 
+# 프로젝트 공통 유틸리티
 from config.settings import get_settings
-from utils.llm_factory import get_llm
+from utils.llm_factory import get_llm, log_llm_error
+from utils.harmony_parser import parse_harmony_tool_call, clean_history_for_harmony
 
 
 # =============================================================================
-# 1. 도구 정의
+# 🛠️ 1. 도구 정의하기
 # =============================================================================
 
-@tool
-def remember_name(name: str) -> str:
+@tool # 사용자의 정보를 기억하는 척 하는 도구입니다.
+def remember_user_info(info: str) -> str:
     """
-    사용자의 이름을 기억합니다.
-    
-    Args:
-        name: 기억할 이름
-    
-    Returns:
-        str: 확인 메시지
+    사용자가 알려준 이름, 취미, 생일 등 중요한 정보를 기억 리스트에 추가합니다.
     """
-    return f"'{name}'님의 이름을 기억했습니다!"
+    # 실제 DB에 저장하는 대신, 실행 결과로 성공 메시지를 보냅니다.
+    return f"메모 완료: '{info}'라고 말씀하신 것을 잘 기억해 두었습니다!"
 
 
-@tool
+@tool # 간단한 계산 도구입니다.
 def calculate(expression: str) -> str:
-    """수학 계산을 수행합니다."""
+    """수학 계산(예: 10 + 20)을 수행합니다."""
     try:
+        allowed = set("0123456789+-*/(). ") # 안전한 문자 확인
+        if not all(c in allowed for c in expression):
+            return "오류: 허용되지 않은 수식입니다."
         result = eval(expression)
-        return f"{expression} = {result}"
+        return f"계산 결과: {result}"
     except Exception as e:
         return f"계산 오류: {e}"
 
 
-tools = [remember_name, calculate]
+# AI가 사용할 도구들을 목록으로 묶습니다.
+tools = [remember_user_info, calculate]
 
 
 # =============================================================================
-# 2. Agent 노드
+# 🤖 2. Agent 노드 (생각하는 단계)
 # =============================================================================
 
 def agent_node(state: MessagesState) -> dict:
-    """대화 컨텍스트를 유지하는 Agent"""
+    """지금까지의 대화(state)를 보고 다음에 할 일을 결정합니다."""
+    # 1. AI 모델을 가져오고 도구들을 연결합니다.
     llm = get_llm()
-    llm_with_tools = llm.bind_tools(tools)
+    llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
     
-    system_message = SystemMessage(content="""당신은 친절한 AI 어시스턴트입니다.
-
-중요한 특징:
-- 이전 대화 내용을 기억하고 참조할 수 있습니다
-- 사용자 이름을 기억하고 적절히 사용합니다
-- 대화 흐름에 맞는 자연스러운 응답을 합니다
-
-이전 대화를 참조하여 일관성 있는 대화를 유지하세요.
+    # 2. AI에게 부여할 성격(기억력이 좋은 비서)을 설정합니다.
+    system_message = SystemMessage(content="""당신은 대화 내용을 아주 잘 기억하는 친절한 비서입니다.
+- 사용자가 이름을 알려주거나 정보를 주면 꼭 다음 대화에서 활용하세요.
+- 이전 대화 문맥을 파악해서 자연스럽게 대답해 주세요.
+- 한글로 친절히 대답하세요.
 """)
     
+    # 3. [지침] + [과거의 모든 대화 기록(state["messages"])]을 하나로 합칩니다.
+    # state["messages"] 안에는 메모리 저장소에서 불러온 이전 대화들이 자동으로 들어있습니다.
     messages = [system_message] + state["messages"]
-    response = llm_with_tools.invoke(messages)
     
+    # 4. 메시지 형식을 깔끔하게 정리하고 AI에게 물어봅니다.
+    cleaned_messages = clean_history_for_harmony(messages)
+    response = llm_with_tools.invoke(cleaned_messages)
+    
+    # 5. 응답을 파싱하고 결과를 반환합니다.
+    response = parse_harmony_tool_call(response, tools)
     return {"messages": [response]}
 
 
 # =============================================================================
-# 3. 라우터 함수
-# =============================================================================
-
-def should_continue(state: MessagesState) -> Literal["tools", END]:
-    last_message = state["messages"][-1]
-    
-    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        print(f"🔧 도구 호출: {[tc['name'] for tc in last_message.tool_calls]}")
-        return "tools"
-    
-    return END
-
-
-# =============================================================================
-# 4. 메모리 기능이 있는 그래프 생성
+# 🗄️ 3. 메모리가 포함된 그래프 구성 (워크플로우 설계)
 # =============================================================================
 
 def create_memory_agent():
-    """
-    메모리 기능이 있는 Agent 그래프 생성
+    """메모리 기능이 장착된 에이전트 순서도를 만듭니다."""
+    # 1. 흐름도 그릴 캔버스(StateGraph) 준비
+    builder = StateGraph(MessagesState)
     
-    Returns:
-        CompiledGraph: 메모리가 활성화된 컴파일된 그래프
-    """
-    graph = StateGraph(MessagesState)
+    # 2. 필요한 각 단계를 노드로 등록
+    builder.add_node("agent", agent_node)
+    builder.add_node("tools", ToolNode(tools))
     
-    graph.add_node("agent", agent_node)
-    graph.add_node("tools", ToolNode(tools))
+    # 3. 시작점 연결
+    builder.add_edge(START, "agent")
     
-    graph.add_edge(START, "agent")
-    graph.add_conditional_edges("agent", should_continue)
-    graph.add_edge("tools", "agent")
-    
-    # ⭐ 핵심: MemorySaver로 상태 저장 활성화
-    memory = MemorySaver()
-    compiled = graph.compile(checkpointer=memory)
-    
-    print("✅ Memory Agent 컴파일 완료! (체크포인터 활성화)")
-    return compiled
-
-
-# =============================================================================
-# 5. 세션별 대화 실행
-# =============================================================================
-
-def chat(graph, thread_id: str, message: str) -> str:
-    """
-    특정 세션(thread_id)에서 대화를 수행합니다.
-    
-    Args:
-        graph: 컴파일된 그래프
-        thread_id: 대화 세션 ID
-        message: 사용자 메시지
-    
-    Returns:
-        str: Agent 응답
-    """
-    # ⭐ config에 thread_id 지정 → 같은 thread_id면 이전 대화 유지
-    config = {"configurable": {"thread_id": thread_id}}
-    
-    print(f"\n💬 [{thread_id}] 사용자: {message}")
-    
-    result = graph.invoke(
-        {"messages": [HumanMessage(content=message)]},
-        config=config
+    # 4. '생각(agent)' 단계 후 도구를 쓸지 끝낼지(END) 결정하는 길을 만듭니다.
+    builder.add_conditional_edges(
+        "agent",
+        tools_condition # 도구 호출 요청이 있는지 체크해주는 내장 함수
     )
     
-    response = result["messages"][-1].content
-    print(f"🤖 [{thread_id}] Agent: {response}")
+    # 5. 도구를 썼으면 다시 '생각(agent)'으로 돌아오게 합니다.
+    builder.add_edge("tools", "agent")
     
-    return response
+    # 6. ⭐ 가장 중요한 부분: 대화 저장소(MemorySaver) 만들기
+    # 이 객체가 프로그램이 켜져 있는 동안 대화 내용을 기억해줍니다.
+    memory = MemorySaver()
+    
+    # 7. 그래프를 완성(컴파일)할 때 이 저장소를 'checkpointer'로 전달합니다.
+    # 이제 이 그래프는 대화방 ID를 통해 서로 다른 대화를 구분해서 기억할 수 있습니다.
+    return builder.compile(checkpointer=memory)
 
 
-def show_conversation_history(graph, thread_id: str):
-    """특정 세션의 대화 기록을 표시합니다."""
+# =============================================================================
+# ▶️ 4. 대화방(Thread)별 실행 함수
+# =============================================================================
+
+def run_chat(graph, thread_id: str, query: str):
+    """지정한 대화방 ID(thread_id)를 사용하여 대화를 나눕니다."""
+    # 1. 어떤 대화방에서 이야기할지 'config' 설정을 만듭니다.
+    # thread_id가 같으면 AI는 예전 대화 내용을 자동으로 불러옵니다.
     config = {"configurable": {"thread_id": thread_id}}
     
-    # 현재 상태 스냅샷 조회
-    state = graph.get_state(config)
-    
-    print(f"\n📜 [{thread_id}] 대화 기록:")
-    print("-" * 40)
-    
-    if state.values and "messages" in state.values:
-        for msg in state.values["messages"]:
-            msg_type = type(msg).__name__
-            content = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
-            print(f"  [{msg_type}] {content}")
-    else:
-        print("  (기록 없음)")
-    
-    print("-" * 40)
-
-
-# =============================================================================
-# 메인 실행
-# =============================================================================
-
-if __name__ == "__main__":
-    from utils.llm_factory import log_llm_error
-    
-    print("\n" + "="*60)
-    print("Memory Agent 예제 - 대화 기록 유지")
-    print("="*60)
+    print(f"\n{'-'*40}")
+    print(f"💬 [방 ID: {thread_id}] 사용자: {query}")
     
     try:
-        graph = create_memory_agent()
+        # 2. 질문과 설정을 담아 그래프를 실행합니다.
+        result = graph.invoke(
+            {"messages": [HumanMessage(content=query)]},
+            config=config # 여기서 대화방 정보를 넘깁니다.
+        )
         
-        # ====================================
-        # 시나리오 1: User A와의 대화 (thread-A)
-        # ====================================
-        print("\n" + "="*60)
-        print("📌 시나리오 1: User A와의 대화")
-        print("="*60)
-        
-        chat(graph, "thread-A", "안녕! 내 이름은 철수야.")
-        chat(graph, "thread-A", "내 이름이 뭐라고 했지?")  # → 이전 대화 참조
-        chat(graph, "thread-A", "10 + 20 계산해줘")
-        
-        # ====================================
-        # 시나리오 2: User B와의 대화 (thread-B)
-        # ====================================
-        print("\n" + "="*60)
-        print("📌 시나리오 2: User B와의 대화 (별도 세션)")
-        print("="*60)
-        
-        chat(graph, "thread-B", "안녕하세요, 저는 영희입니다.")
-        chat(graph, "thread-B", "제 이름 기억하세요?")  # → thread-B의 대화만 참조
-        
-        # ====================================
-        # 시나리오 3: 다시 User A와 대화 (이전 기록 유지)
-        # ====================================
-        print("\n" + "="*60)
-        print("📌 시나리오 3: 다시 User A (이전 대화 기억)")
-        print("="*60)
-        
-        chat(graph, "thread-A", "아까 계산 결과가 뭐였지?")  # → thread-A의 이전 대화 참조
-        
-        # ====================================
-        # 대화 기록 확인
-        # ====================================
-        print("\n" + "="*60)
-        print("📌 대화 기록 확인")
-        print("="*60)
-        
-        show_conversation_history(graph, "thread-A")
-        show_conversation_history(graph, "thread-B")
+        # 3. 마지막 대답을 화면에 출력합니다.
+        final_answer = result["messages"][-1].content
+        print(f"🤖 AI: {final_answer}")
         
     except Exception as e:
         log_llm_error(e)
-        print(f"❌ 오류: {e}")
+        print(f"❌ 대화 중 오류가 발생했습니다: {e}")
+
+
+# =============================================================================
+# 🚀 5. 프로그램 실제 시작 (CLI)
+# =============================================================================
+
+if __name__ == "__main__":
+    print("\n" + "🧠 메모리(기억) 에이전트를 시작합니다! 🧠")
+    print("이 에이전트는 당신이 했던 말을 기억할 수 있습니다.")
+    print("- '/thread 방이름' : 대화방을 바꿉니다 (예: /thread room2)")
+    print("- 'q', 'exit' : 프로그램을 종료합니다.\n")
+    
+    # 1. 기억 기능이 있는 에이전트를 생성합니다.
+    memory_graph = create_memory_agent()
+    
+    # 2. 처음 사용할 기본 대화방 ID를 정합니다.
+    current_thread = "main_room"
+    
+    while True:
+        try:
+            # 질문 입력 받기
+            user_input = input(f"🙋 [현위치: {current_thread}] : ").strip()
+            
+            if not user_input: continue
+                
+            # 'q' 등을 입력하면 종료
+            if user_input.lower() in ("quit", "exit", "q"):
+                print("👋 대화 기록을 지우고 종료합니다. 다음에 봐요!")
+                break
+            
+            # 대화방을 바꾸고 싶을 때 (/thread 이름 입력)
+            if user_input.startswith("/thread "):
+                new_thread = user_input.split(" ")[1]
+                print(f"🔄 대화방을 '{new_thread}'로 이동했습니다. 이전 기억은 거기 남아있습니다.")
+                current_thread = new_thread
+                continue
+
+            # 입력한 방 ID와 질문으로 대화를 실행합니다.
+            run_chat(memory_graph, current_thread, user_input)
+            
+        except KeyboardInterrupt:
+            print("\n👋 프로그램을 종료합니다.")
+            break
+        except Exception as e:
+            print(f"\n⚠️ 시스템 오류 발생: {e}")
+            break

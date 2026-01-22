@@ -1,505 +1,314 @@
 # -*- coding: utf-8 -*-
 """
-05. Integrated Test - 모든 기법을 통합한 최종 예제
+============================================================================
+📚 05. Integrated Test - 모든 기법을 통합한 최종 완성형 Agent
+============================================================================
 
-이 예제는 지금까지 학습한 모든 LangGraph 기법을 통합하여
-실전 수준의 RAG Agent 시스템을 구현합니다.
+지금까지 개별적으로 학습한 모든 LangGraph 및 RAG 기법을 하나의 대규모 시스템으로 
+통합합니다. 실전에서 사용 가능한 수준의 복합 에이전트 구조를 학습합니다.
 
-통합된 기법:
-    1. Multi-Agent (Supervisor 패턴)
-    2. Memory (대화 기록 유지)
-    3. Adaptive RAG (쿼리 복잡도 분류)
-    4. Tool Calling (외부 도구 활용)
-    5. Document Grading (문서 관련성 평가)
-    6. Query Transform (쿼리 변환)
+🎯 통합된 핵심 기술:
+    1. Router (Adaptive): 질문 유형(대화/검색/도구) 및 복잡도 자동 판별
+    2. Multi-Agent (Supervisor): 전문 에이전트들에게 작업 분배
+    3. Memory (MemorySaver): 세션별 대화 기록 유지 및 문맥 파악
+    4. Tool Calling (ReAct): 필요 시 계산기, 시간 조회 등 외부 도구 활용
+    5. Advanced RAG (Query Transform & Grading): 쿼리 변환 및 문서 품질 검증
+    6. Harmony Support: GPT-OSS(vLLM) 로컬 서버 호환성 완벽 지원
 
-실행: python examples/05_integrated_test.py
+그래프 구조:
+    START → router (판별) ─┬→ chat (일반 대화) ──────────────→ END
+                            ├→ rag_flow (검색/평가/생성) ─────→ END
+                            └→ tool_agent (도구/실행) ──🔁───→ END
+
+실행 방법:
+    python examples/05_integrated_test.py
 """
 
-import sys
-from pathlib import Path
-from typing import TypedDict, List, Literal, Annotated
+# =============================================================================
+# 📦 필수 라이브러리 임포트
+# =============================================================================
 
-# 프로젝트 루트를 경로에 추가하여 내부 모듈(config, utils)을 불러올 수 있게 함
+import sys                              # 시스템 경로 조작
+from pathlib import Path                # 경로 관리
+from typing import TypedDict, List, Literal, Annotated  # 타입 힌팅
+
+# 프로젝트 루트를 경로에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# LangChain: 메시지 구조, 도구 정의 및 RAG 관련
-from langchain_core.documents import Document  # 표준 문서 객체
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage  # 다양한 메시지 타입
-from langchain_core.prompts import ChatPromptTemplate  # 프롬프트 설계도
-from langchain_core.tools import tool  # 도구 정의 데코레이터
+# LangChain 구성 요소
+from langchain_core.documents import Document
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
 
-# LangGraph: 워크플로우 제어, 상태 관리 및 체크포인트
-from langgraph.graph import StateGraph, START, END  # 그래프 빌더 및 주요 제어 포인트
-from langgraph.graph.message import add_messages  # 메시지 자동 병합 리듀서
-from langgraph.prebuilt import ToolNode  # 표준 도구 실행 노드
-from langgraph.checkpoint.memory import MemorySaver  # 대화 기록 영속성 관리를 위한 체크포인터
+# LangGraph 구성 요소
+from langgraph.graph import StateGraph, START, END
+from langgraph.graph.message import add_messages  # 메시지를 덮어쓰지 않고 추가(Append)하는 리듀서
+from langgraph.prebuilt import ToolNode
+from langgraph.checkpoint.memory import MemorySaver
 
 # 프로젝트 유틸리티
-from config.settings import get_settings  # 설정 및 환경 변수 로드
-from utils.llm_factory import get_llm, get_embeddings  # LLM/임베딩 팩토리
-from utils.vector_store import VectorStoreManager  # 벡터 DB 검색 매니저
+from config.settings import get_settings
+from utils.llm_factory import get_llm, get_embeddings, log_llm_error
+from utils.harmony_parser import parse_harmony_tool_call, clean_history_for_harmony
+from utils.vector_store import VectorStoreManager
 
 
 # =============================================================================
-# 1. 통합 State 정의
+# 📋 1. 통합 상태(State) 정의
 # =============================================================================
 
-class IntegratedAgentState(TypedDict):
-    """통합 Agent 시스템의 상태"""
-    # 메시지 히스토리 (Memory)
+class IntegratedState(TypedDict):
+    """시스템 전체를 관통하는 통합 상태 딕셔너리"""
+    # 💡 Annotated와 add_messages를 사용하여 메시지 리스트가 자동으로 누적되게 함
     messages: Annotated[List[BaseMessage], add_messages]
     
-    # 쿼리 분석
-    current_query: str
-    query_type: str                      # "chat" | "search" | "tool"
-    query_complexity: str                # "simple" | "moderate" | "complex"
+    current_query: str                # 사용자의 최근 질문
+    query_type: str                   # 질문 유형 ("chat", "rag", "tool")
     
-    # RAG 관련
-    transformed_query: str               # 변환된 쿼리
-    documents: List[Document]            # 검색된 문서
-    graded_documents: List[Document]     # 평가된 문서
-    context: str
+    # RAG 관련 필드
+    transformed_query: str            # 검색용으로 변환된 질문
+    context: str                      # 검색 및 검증된 문맥 데이터
     
-    # 실행 추적
-    current_agent: str
-    steps_taken: List[str]
+    # 추적용 필드
+    steps_taken: List[str]            # 어떤 노드를 거쳐왔는지 기록 (디버깅용)
 
 
 # =============================================================================
-# 2. Vector Store 초기화
+# 🗄️ 2. Vector Store & Tools 준비
 # =============================================================================
 
-_integrated_vs: VectorStoreManager = None
-
-def get_integrated_vs() -> VectorStoreManager:
-    global _integrated_vs
-    if _integrated_vs is None:
-        print("📚 통합 시스템 Vector Store 초기화...")
-        _integrated_vs = VectorStoreManager(
-            embeddings=get_embeddings(),
-            collection_name="integrated_system",
-        )
+def get_combined_vs() -> VectorStoreManager:
+    """통합 테스트용 지식 데이터 로드"""
+    embeddings = get_embeddings()
+    manager = VectorStoreManager(embeddings=embeddings, collection_name="integrated_final")
+    if True:
         samples = [
-            "LangGraph는 상태 기반 에이전트를 구축하기 위한 프레임워크입니다. StateGraph로 노드와 엣지를 정의합니다.",
-            "RAG(Retrieval-Augmented Generation)는 검색 증강 생성으로, LLM에 외부 지식을 제공합니다.",
-            "Multi-Agent 시스템은 여러 전문 Agent가 협력하여 복잡한 작업을 수행합니다.",
-            "MemorySaver는 LangGraph에서 대화 기록을 저장하고 복원하는 체크포인터입니다.",
-            "Adaptive RAG는 쿼리 복잡도에 따라 다른 RAG 전략을 선택합니다.",
-            "Tool Calling은 LLM이 외부 도구를 호출하여 실시간 정보를 얻는 기법입니다.",
-            "Document Grading은 검색된 문서의 관련성을 평가하여 품질을 보장합니다.",
-            "Query Transform은 원본 쿼리를 변환하여 검색 효율을 높입니다. HyDE, Multi-Query 등이 있습니다.",
+            "LangGraph는 순환 그래프를 지원하는 에이전트 개발 프레임워크입니다.",
+            "MemorySaver를 쓰면 thread_id별로 대화 내용을 기억할 수 있습니다.",
+            "Reranking은 검색된 문서의 우선순위를 LLM이 다시 매기는 기술입니다.",
+            "HyDE는 가짜 답변을 생성해 검색 정확도를 높이는 쿼리 변형 기법입니다.",
+            "에이전트는 LLM이 도구 사용 여부를 스스로 결정하는 시스템을 말합니다.",
         ]
-        _integrated_vs.add_texts(texts=samples)
-        print(f"✅ {len(samples)}개 문서 추가")
-    return _integrated_vs
-
-
-# =============================================================================
-# 3. 도구 정의
-# =============================================================================
+        manager.add_texts(samples)
+    return manager
 
 @tool
-def get_current_time() -> str:
-    """현재 시간을 반환합니다."""
+def calculate_math(expression: str) -> str:
+    """복잡한 수학 계산을 수행합니다."""
+    try: return f"결과: {eval(expression)}"
+    except: return "계산할 수 없는 수식입니다."
+
+@tool
+def get_system_time() -> str:
+    """현재 시스템의 날짜와 시간을 확인합니다."""
     from datetime import datetime
-    return f"현재 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    return f"현재 시각: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
 
-
-@tool
-def calculate(expression: str) -> str:
-    """수학 계산을 수행합니다."""
-    try:
-        return f"{expression} = {eval(expression)}"
-    except:
-        return "계산 오류"
-
-
-@tool
-def search_web(query: str) -> str:
-    """웹에서 정보를 검색합니다. (데모용)"""
-    return f"'{query}' 검색 결과: 관련 정보를 찾았습니다."
-
-
-tools = [get_current_time, calculate, search_web]
+# 그래프에서 사용할 도구 리스트
+tools = [calculate_math, get_system_time]
 
 
 # =============================================================================
-# 4. 노드 함수들
+# 🧠 3. 노드 함수 정의 (노드별 전문 역할)
 # =============================================================================
 
-def router_node(state: IntegratedAgentState) -> dict:
+def router_node(state: IntegratedState) -> dict:
     """
-    Router: 쿼리를 분석하여 적절한 처리 경로 결정
-    
-    - chat: 일반 대화 → 직접 응답
-    - search: 정보 검색 필요 → RAG 파이프라인
-    - tool: 도구 사용 필요 → Tool Agent
+    [노드 1] 라우터: 질문의 의도를 파악하여 경로를 배정합니다.
     """
-    print("\n🔀 [Router] 쿼리 분석 중...")
-    
-    # 마지막 사용자 메시지 추출
-    last_message = state["messages"][-1]
-    query = last_message.content if hasattr(last_message, "content") else str(last_message)
+    print("\n🧐 [Router] 사용자 질문 분석 중...")
+    last_msg = state["messages"][-1].content
     
     llm = get_llm()
-    
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """쿼리를 분석하여 처리 방식을 결정하세요.
-
-- chat: 인사, 잡담, 이전 대화 참조 등
-- search: 정보 검색이 필요한 질문 (LangGraph, RAG 등)
-- tool: 계산, 현재 시간, 웹 검색 등 도구가 필요한 경우
-
-"chat", "search", "tool" 중 하나만 답하세요."""),
-        ("human", "쿼리: {query}"),
-    ])
-    
-    response = (prompt | llm).invoke({"query": query})
-    content = response.content.lower().strip()
-    
-    if "tool" in content:
-        query_type = "tool"
-    elif "search" in content:
-        query_type = "search"
-    else:
-        query_type = "chat"
-    
-    print(f"   → 쿼리 유형: {query_type}")
-    
-    return {
-        "current_query": query,
-        "query_type": query_type,
-        "steps_taken": state.get("steps_taken", []) + ["router"]
-    }
-
-
-def chat_node(state: IntegratedAgentState) -> dict:
-    """일반 대화 처리"""
-    print("\n💬 [Chat] 대화 응답 생성...")
-    
-    llm = get_llm()
-    
-    # 이전 대화 컨텍스트 포함
-    messages = [
-        SystemMessage(content="당신은 친절한 AI 어시스턴트입니다. 이전 대화를 참고하여 자연스럽게 대화하세요.")
-    ] + state["messages"]
-    
-    response = llm.invoke(messages)
-    
-    return {
-        "messages": [response],
-        "steps_taken": state.get("steps_taken", []) + ["chat"]
-    }
-
-
-def query_transform_node(state: IntegratedAgentState) -> dict:
-    """쿼리 변환 (HyDE 스타일)"""
-    print("\n🔄 [Query Transform] 쿼리 변환 중...")
-    
-    llm = get_llm()
-    
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", "질문에 대한 이상적인 답변을 작성하세요. 이 답변은 검색에 사용됩니다."),
+        ("system", "질문을 분석하여 'chat'(단순대화), 'rag'(지식검색), 'tool'(도구사용) 중 하나로 분류하세요. 단어 하나만 답하세요."),
         ("human", "{query}"),
     ])
     
-    response = (prompt | llm).invoke({"query": state["current_query"]})
-    transformed = response.content
+    res = (prompt | llm).invoke({"query": last_msg})
+    q_type = res.content.lower().strip()
     
-    print(f"   → 변환된 쿼리: {transformed[:80]}...")
+    # 안전 장치: 분류 실패 시 기본 chat
+    if q_type not in ["chat", "rag", "tool"]: q_type = "chat"
     
-    return {
-        "transformed_query": transformed,
-        "steps_taken": state.get("steps_taken", []) + ["query_transform"]
-    }
+    print(f"   → 분석 결과: '{q_type}' 경로로 배정")
+    return {"query_type": q_type, "current_query": last_msg, "steps_taken": ["router"]}
 
 
-def retrieve_node(state: IntegratedAgentState) -> dict:
-    """문서 검색"""
-    print("\n🔍 [Retrieve] 문서 검색 중...")
-    
-    vs = get_integrated_vs()
-    
-    # 변환된 쿼리 또는 원본 쿼리 사용
-    search_query = state.get("transformed_query") or state["current_query"]
-    docs = vs.search(query=search_query, k=5)
-    
-    print(f"   → {len(docs)}개 문서 검색됨")
-    
-    return {
-        "documents": docs,
-        "steps_taken": state.get("steps_taken", []) + ["retrieve"]
-    }
+def chat_node(state: IntegratedState) -> dict:
+    """
+    [노드 2] 일반 대화: 대화 지침을 기반으로 친절하게 답변합니다.
+    """
+    print("💬 [Chat] 일상 대화 또는 가벼운 응답 생성 중...")
+    llm = get_llm()
+    # vLLM 호환성 처리 포함
+    messages = [SystemMessage(content="당신은 다정하고 똑똑한 비서입니다.")] + state["messages"]
+    cleaned = clean_history_for_harmony(messages)
+    res = llm.invoke(cleaned)
+    return {"messages": [res], "steps_taken": state["steps_taken"] + ["chat"]}
 
 
-def grade_documents_node(state: IntegratedAgentState) -> dict:
-    """문서 관련성 평가"""
-    print("\n📊 [Grade] 문서 관련성 평가...")
-    
+def rag_pipeline_node(state: IntegratedState) -> dict:
+    """
+    [노드 3] 통합 RAG: 쿼리 변환, 검색, 문서 평가를 한 번에 처리합니다.
+    (복잡성을 줄이기 위해 하나의 노드에서 처리하거나, 원하면 더 나눌 수 있습니다)
+    """
+    print("🔍 [RAG] 지식 검색 및 문서 검증 진행 중...")
     llm = get_llm()
     
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", "문서가 질문과 관련있으면 'yes', 없으면 'no'만 답하세요."),
-        ("human", "질문: {query}\n\n문서: {document}"),
-    ])
+    # 1. 쿼리 변환 (HyDE)
+    hyde_res = llm.invoke(f"질문: {state['current_query']}\n이 질문에 대한 가상의 짧은 답변을 작성해 주세요.")
     
-    graded = []
-    for i, doc in enumerate(state["documents"]):
-        response = (prompt | llm).invoke({
-            "query": state["current_query"],
-            "document": doc.page_content[:500]
-        })
-        
-        if "yes" in response.content.lower():
-            graded.append(doc)
-            print(f"   [{i+1}] ✅ 관련 있음")
-        else:
-            print(f"   [{i+1}] ❌ 관련 없음")
+    # 2. 검색
+    vs = get_combined_vs()
+    docs = vs.search(hyde_res.content, k=3)
     
-    context = "\n\n".join([doc.page_content for doc in graded[:3]])
+    # 3. 문서 평가 (Grading)
+    valid_docs = []
+    for d in docs:
+        grade = llm.invoke(f"문서: {d.page_content}\n질문: {state['current_query']}\n관련 있으면 'yes' 없으면 'no'라고만 하세요.")
+        if "yes" in grade.content.lower():
+            valid_docs.append(d.page_content)
     
-    print(f"   → 관련 문서: {len(graded)}개")
+    context = "\n".join(valid_docs) if valid_docs else "관련 정보를 찾지 못했습니다."
     
-    return {
-        "graded_documents": graded,
-        "context": context,
-        "steps_taken": state.get("steps_taken", []) + ["grade"]
-    }
+    # 4. 답변 생성
+    ans = llm.invoke(f"참조:\n{context}\n\n질문: {state['current_query']}\n답변해 주세요.")
+    
+    return {"messages": [ans], "steps_taken": state["steps_taken"] + ["integrated_rag"]}
 
 
-def generate_node(state: IntegratedAgentState) -> dict:
-    """RAG 답변 생성"""
-    print("\n💭 [Generate] 답변 생성 중...")
-    
+def tool_agent_node(state: IntegratedState) -> dict:
+    """
+    [노드 4] 도구 에이전트: 도구를 선택하고 사용합니다.
+    """
+    print("🔧 [Tool Agent] 필요한 도구 탐색 및 실행 결정 중...")
     llm = get_llm()
+    llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
     
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", """컨텍스트를 기반으로 질문에 답변하세요.
-
-컨텍스트:
-{context}"""),
-        ("human", "{query}"),
-    ])
+    # vLLM/Harmony 호환성 처리
+    cleaned = clean_history_for_harmony(state["messages"])
+    res = llm_with_tools.invoke(cleaned)
     
-    response = (prompt | llm).invoke({
-        "context": state.get("context", "정보 없음"),
-        "query": state["current_query"]
-    })
+    # Harmony 포맷 응답 파싱
+    res = parse_harmony_tool_call(res, tools)
     
-    return {
-        "messages": [AIMessage(content=response.content)],
-        "steps_taken": state.get("steps_taken", []) + ["generate"]
-    }
+    return {"messages": [res], "steps_taken": state["steps_taken"] + ["tool_agent"]}
 
 
-def tool_agent_node(state: IntegratedAgentState) -> dict:
-    """도구 사용 Agent"""
-    print("\n🔧 [Tool Agent] 도구 호출 중...")
-    
-    llm = get_llm()
-    llm_with_tools = llm.bind_tools(tools)
-    
-    messages = [
-        SystemMessage(content="필요한 도구를 사용하여 질문에 답하세요.")
-    ] + state["messages"]
-    
-    response = llm_with_tools.invoke(messages)
-    
-    return {
-        "messages": [response],
-        "steps_taken": state.get("steps_taken", []) + ["tool_agent"]
-    }
+# =============================================================================
+# 🚦 4. 라우터 및 조건부 로직
+# =============================================================================
 
+def route_selection(state: IntegratedState) -> Literal["chat", "rag", "tool"]:
+    """라우터 노드 이후 어디로 갈지 결정"""
+    return state["query_type"]
 
-def tool_executor_node(state: IntegratedAgentState) -> dict:
-    """도구 실행"""
-    print("\n⚙️ [Tool Executor] 도구 실행...")
-    
-    tool_node = ToolNode(tools)
-    result = tool_node.invoke(state)
-    
-    return {
-        "messages": result.get("messages", []),
-        "steps_taken": state.get("steps_taken", []) + ["tool_executor"]
-    }
-
-
-def should_use_tools(state: IntegratedAgentState) -> Literal["tools", "end"]:
-    """도구 호출 여부 확인"""
-    last_message = state["messages"][-1]
-    
-    if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+def check_further_tools(state: IntegratedState) -> Literal["tools", "end"]:
+    """도구를 더 써야 하는지 판단 (ReAct 루프)"""
+    last_msg = state["messages"][-1]
+    if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+        print(f"   → 실행할 도구 발견: {[tc['name'] for tc in last_msg.tool_calls]}")
         return "tools"
     return "end"
 
 
 # =============================================================================
-# 5. 라우터 함수
+# 🔗 5. 그래프 조립 (Complete Graph)
 # =============================================================================
 
-def route_by_query_type(state: IntegratedAgentState) -> Literal["chat", "rag", "tool"]:
-    """쿼리 유형에 따라 라우팅"""
-    query_type = state.get("query_type", "chat")
+def create_integrated_system():
+    """모든 노드와 엣지를 연결하여 완성된 시스템을 만듭니다."""
+    builder = StateGraph(IntegratedState)
     
-    if query_type == "search":
-        return "rag"
-    elif query_type == "tool":
-        return "tool"
-    return "chat"
-
-
-# =============================================================================
-# 6. 그래프 생성
-# =============================================================================
-
-def create_integrated_agent():
-    """
-    통합 Agent 그래프 생성
+    # 노드 등록
+    builder.add_node("router", router_node)
+    builder.add_node("chat", chat_node)
+    builder.add_node("rag", rag_pipeline_node)
+    builder.add_node("tool_agent", tool_agent_node)
+    builder.add_node("tools", ToolNode(tools))  # 실제 도구를 실행하는 prebuilt 노드
     
-    구조:
-        START → router → (chat | rag | tool)
-        
-        chat → END
-        
-        rag: query_transform → retrieve → grade → generate → END
-        
-        tool: tool_agent → (tools → tool_agent) | END
-    """
-    graph = StateGraph(IntegratedAgentState)
+    # 엣지 연결
+    builder.add_edge(START, "router")
     
-    # 노드 추가
-    graph.add_node("router", router_node)
-    graph.add_node("chat", chat_node)
-    graph.add_node("query_transform", query_transform_node)
-    graph.add_node("retrieve", retrieve_node)
-    graph.add_node("grade", grade_documents_node)
-    graph.add_node("generate", generate_node)
-    graph.add_node("tool_agent", tool_agent_node)
-    graph.add_node("tools", tool_executor_node)
-    
-    # 시작 → 라우터
-    graph.add_edge(START, "router")
-    
-    # 라우터 분기
-    graph.add_conditional_edges(
-        "router",
-        route_by_query_type,
-        {
-            "chat": "chat",
-            "rag": "query_transform",
-            "tool": "tool_agent"
-        }
+    # 라우터에서의 분기
+    builder.add_conditional_edges(
+        "router", 
+        route_selection, 
+        {"chat": "chat", "rag": "rag", "tool": "tool_agent"}
     )
     
-    # Chat 경로
-    graph.add_edge("chat", END)
+    # Chat과 RAG는 완료 후 종료
+    builder.add_edge("chat", END)
+    builder.add_edge("rag", END)
     
-    # RAG 경로
-    graph.add_edge("query_transform", "retrieve")
-    graph.add_edge("retrieve", "grade")
-    graph.add_edge("grade", "generate")
-    graph.add_edge("generate", END)
-    
-    # Tool 경로
-    graph.add_conditional_edges(
-        "tool_agent",
-        should_use_tools,
-        {
-            "tools": "tools",
-            "end": END
-        }
+    # 도구 에이전트는 루프 구조 (ReAct)
+    builder.add_conditional_edges(
+        "tool_agent", 
+        check_further_tools, 
+        {"tools": "tools", "end": END}
     )
-    graph.add_edge("tools", "tool_agent")
+    builder.add_edge("tools", "tool_agent") # 도구 실행 후 다시 에이전트로 가서 결과 요약
     
-    # 메모리 활성화
+    # 💾 대화 기록 유지를 위한 메모리 체크포인터
     memory = MemorySaver()
-    compiled = graph.compile(checkpointer=memory)
-    
-    print("✅ 통합 Agent 시스템 컴파일 완료!")
-    return compiled
+    return builder.compile(checkpointer=memory)
 
 
 # =============================================================================
-# 7. 실행 인터페이스
+# ▶️ 6. 실행 및 인터페이스 (CLI)
 # =============================================================================
 
-def chat_with_agent(graph, thread_id: str, message: str) -> str:
-    """Agent와 대화"""
+def run_chat_loop(graph, thread_id: str):
+    """지속적인 대화를 위한 CLI 루프"""
+    print("\n" + "="*60)
+    print("🚀 통합 AI 에이전트 시스템 가동 중...")
+    print(f"현재 세션 ID: {thread_id}")
+    print("="*60)
+    print("- 'quit' 또는 'exit'를 입력하여 종료")
+    print("- 아무 질문이나 던져보세요 (대화, 기술 질문, 계산 등)")
+    print("="*60)
+
     config = {"configurable": {"thread_id": thread_id}}
     
-    print(f"\n{'='*60}")
-    print(f"🙋 [{thread_id}] 사용자: {message}")
-    print('='*60)
-    
-    result = graph.invoke(
-        {
-            "messages": [HumanMessage(content=message)],
-            "current_query": "",
-            "query_type": "",
-            "query_complexity": "",
-            "transformed_query": "",
-            "documents": [],
-            "graded_documents": [],
-            "context": "",
-            "current_agent": "",
-            "steps_taken": []
-        },
-        config=config
-    )
-    
-    # 실행 경로 출력
-    steps = result.get("steps_taken", [])
-    print(f"\n📍 실행 경로: {' → '.join(steps)}")
-    
-    # 최종 응답
-    final_message = result["messages"][-1]
-    response = final_message.content if hasattr(final_message, "content") else str(final_message)
-    
-    print(f"\n🤖 [{thread_id}] Agent: {response}")
-    print('='*60)
-    
-    return response
+    while True:
+        try:
+            user_input = input("\n🙋 사용자: ").strip()
+            if not user_input: continue
+            if user_input.lower() in ["quit", "exit", "q"]:
+                print("👋 시스템을 종료합니다. 안녕히 가세요!")
+                break
+                
+            # 그래프 실행
+            # 💡 messages에 내용을 담아 넘기면 Annotated 리듀서에 의해 자동 추가됨
+            result = graph.invoke(
+                {"messages": [HumanMessage(content=user_input)]}, 
+                config=config
+            )
+            
+            # 최종 응답 출력
+            ans = result["messages"][-1].content
+            print(f"\n🤖 Agent: {ans}")
+            
+            # 디버깅 정보 (어떤 과정을 거쳤나?)
+            path = " → ".join(result.get("steps_taken", []))
+            print(f"💡 [실행 경로: {path}]")
 
+        except KeyboardInterrupt:
+            print("\n👋 종료합니다.")
+            break
+        except Exception as e:
+            log_llm_error(e)
+            print(f"❌ 오류 발생: {e}")
 
-# =============================================================================
-# 메인 실행
-# =============================================================================
 
 if __name__ == "__main__":
-    from utils.llm_factory import log_llm_error
+    # 1. 시스템 초기화 (그래프 생성)
+    final_agent = create_integrated_system()
     
-    print("\n" + "="*60)
-    print("🚀 통합 테스트 - 모든 기법 결합")
-    print("="*60)
+    # 2. 고유 세션 ID 생성 (또는 고정값 사용)
+    my_thread_id = "final_test_user_001"
     
-    try:
-        graph = create_integrated_agent()
-        
-        # 테스트 시나리오
-        print("\n📌 시나리오: 다양한 유형의 질문")
-        
-        # 1. 일반 대화
-        chat_with_agent(graph, "test-session", "안녕하세요!")
-        
-        # 2. 정보 검색 (RAG)
-        chat_with_agent(graph, "test-session", "LangGraph가 뭐야?")
-        
-        # 3. 도구 사용
-        chat_with_agent(graph, "test-session", "지금 몇 시야?")
-        
-        # 4. 계산
-        chat_with_agent(graph, "test-session", "123 * 456 계산해줘")
-        
-        # 5. 이전 대화 참조 (Memory)
-        chat_with_agent(graph, "test-session", "아까 LangGraph에 대해 뭐라고 했지?")
-        
-        print("\n" + "="*60)
-        print("✅ 통합 테스트 완료!")
-        print("="*60)
-        
-    except Exception as e:
-        log_llm_error(e)
-        print(f"❌ 오류: {e}")
-        import traceback
-        traceback.print_exc()
+    # 3. CLI 대화 루프 시작
+    run_chat_loop(final_agent, my_thread_id)
