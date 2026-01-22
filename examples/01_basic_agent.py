@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # 🔍 LangChain DEBUG 로깅 활성화 - LLM과 주고받는 raw 메시지 확인
 import langchain
-langchain.debug = False  # 너무 양이 많으면 False로 변경하세요
+langchain.debug = True  # 상세 로그를 위해 다시 켭니다
 # 또는 더 상세한 로그:
 # import logging
 # logging.getLogger("langchain").setLevel(logging.DEBUG)
@@ -41,7 +41,7 @@ from langgraph.prebuilt import ToolNode, tools_condition  # 표준 도구 실행
 # 프로젝트 유틸리티: 설정 로드 및 LLM 생성 팩토리
 from config.settings import get_settings  # 중앙 설정(API 키, 모델명 등) 로드
 from utils.llm_factory import get_llm, log_llm_error  # LLM 인스턴스 생성 및 오류 로깅 유틸리티
-from utils.harmony_parser import parse_harmony_tool_call  # GPT-OSS Harmony 포맷 파서
+from utils.harmony_parser import parse_harmony_tool_call, clean_history_for_harmony  # GPT-OSS Harmony 유틸리티
 
 
 # =============================================================================
@@ -88,17 +88,20 @@ def agent_node(state: MessagesState):
     import json
     
     llm = get_llm()
-    llm_with_tools = llm.bind_tools(tools)
+    # 💡 vLLM/Local LLM 호환성: 병렬 도구 호출 비활성화 (많은 서버가 지원하지 않음)
+    llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
     
-    # 시스템 메시지가 필요하다면 맨 앞에 추가 (messages 리스트에는 영향 없음)
-    # 실제 구현에서는 state에 system message를 관리하거나 여기서 매번 추가할 수 있음
+    # 시스템 메시지 정의
     sys_msg = SystemMessage(content="당신은 날씨 조회와 계산을 돕는 유용한 어시스턴트입니다.")
 
     # 메시지 리스트 구성
     messages = [sys_msg] + state["messages"]
     
+    # 🧹 vLLM 호환성: LLM이 이해할 수 있는 클린한 포맷으로 변환 (History Cleaning)
+    cleaned_messages = clean_history_for_harmony(messages)
+    
     # LLM 호출
-    response = llm_with_tools.invoke(messages)
+    response = llm_with_tools.invoke(cleaned_messages)
     
     # 🔍 디버깅 로그: LLM 응답 상세 분석
     print(f"\n{'='*60}")
@@ -198,12 +201,24 @@ def run_agent(query: str):
 
 if __name__ == "__main__":
     print("\nLangGraph Basic Agent (Standard Pattern)")
+    print("종료하려면 'quit' 또는 'exit'를 입력하세요.\n")
     
-    queries = [
-        "서울 날씨 어때?",
-        "25 * 4 계산해줘",
-        "안녕하세요",
-    ]
-    
-    for q in queries:
-        run_agent(q)
+    while True:
+        try:
+            query = input("🙋 질문을 입력하세요: ").strip()
+            
+            if not query:
+                continue
+            
+            if query.lower() in ("quit", "exit", "q"):
+                print("👋 Agent를 종료합니다.")
+                break
+            
+            run_agent(query)
+            
+        except KeyboardInterrupt:
+            print("\n👋 Agent를 종료합니다.")
+            break
+        except EOFError:
+            print("\n👋 Agent를 종료합니다.")
+            break
