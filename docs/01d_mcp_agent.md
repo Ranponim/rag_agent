@@ -108,7 +108,7 @@ async with MultiServerMCPClient(MCP_SERVER_CONFIGS) as client:
     agent = create_react_agent(
         model,
         tools=client.get_tools(),
-        state_modifier="유용한 AI 어시스턴트입니다."
+        prompt="유용한 AI 어시스턴트입니다."
     )
     
     # 비동기 실행

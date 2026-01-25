@@ -87,16 +87,16 @@ from langgraph.prebuilt import create_react_agent
 agent_executor = create_react_agent(
     model,
     tools=tools,
-    state_modifier="당신은 유용한 비서입니다."  # 시스템 프롬프트
+    prompt="당신은 유용한 비서입니다."  # 시스템 프롬프트
 )
 ```
 
 ### 시스템 프롬프트 설정
-`state_modifier` 파라미터를 통해 에이전트의 페르소나(역할)를 지정합니다.
+`prompt` 파라미터를 통해 에이전트의 페르소나(역할)를 지정합니다.
 
 ```python
 system_prompt = "당신은 날씨 정보와 간단한 계산을 도와주는 유용한 비서입니다."
-agent = create_react_agent(model, tools=tools, state_modifier=system_prompt)
+agent = create_react_agent(model, tools=tools, prompt=system_prompt)
 ```
 
 ### 🖥️ 실행 방법
