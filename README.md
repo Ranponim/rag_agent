@@ -169,7 +169,7 @@ LangGraph의 기본 구조와 에이전트 패턴을 학습합니다.
 | 예제 | 파일 | 핵심 학습 내용 |
 |------|------|--------------|
 | **Basic Agent** | [`01_basic_agent.md`](docs/01_basic_agent.md) | Standard vs ReAct 패턴 비교 |
-| **Standard Pattern** | `01_basic_agent_standard.py` | StateGraph 직접 구성 |
+| **Standard Pattern** | `01_base_agent_standard.py` | StateGraph 직접 구성 |
 | **ReAct Pattern** | `01_base_agent_react.py` | create_react_agent 활용 |
 | **Multi-Tool** | [`01a_multi_tool_agent.md`](docs/01a_multi_tool_agent.md) | 5개 이상 도구 관리 |
 | **Memory** | [`01b_memory_agent.md`](docs/01b_memory_agent.md) | MemorySaver, thread_id |
@@ -223,7 +223,7 @@ LangGraph의 기본 구조와 에이전트 패턴을 학습합니다.
 
 ```bash
 # Basic Agent 시리즈
-python examples/01_basic_agent_standard.py
+python examples/01_base_agent_standard.py
 python examples/01_base_agent_react.py
 python examples/01d_mcp_agent.py
 

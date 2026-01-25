@@ -89,27 +89,49 @@ def create_agent():
     
     return agent_executor
 
-# 3. 실행부 (Execution)
+# 3. 실행부 (Execution) - CLI 대화형 인터페이스
 # 사용자 요청에 따라 로컬에서 직접 실행하실 수 있도록 구성하였습니다.
 if __name__ == "__main__":
     # 에이전트 생성
     agent = create_agent()
     
-    # 테스트 질문 생성 (날씨와 계산 요청)
-    inputs = {"messages": [HumanMessage(content="서울 날씨를 알려주고, 25 * 4 결과도 계산해줘.")]}
+    print("=" * 50)
+    print("🤖 LangGraph ReAct 에이전트 (CLI 대화 모드)")
+    print("=" * 50)
+    print("날씨 정보와 계산을 도와드립니다.")
+    print("종료하려면 'quit' 또는 'exit'를 입력하세요.\n")
     
-    print("--- 에이전트 실행 시작 (ReAct 방식) ---")
-    # invoke 실행 (최종 결과만 확인 - 환경 문제로 인해 stream 대신 사용)
-    try:
-        # invoke는 그래프의 모든 단계를 거친 후 최종 상태를 반환합니다.
-        result = agent.invoke(inputs)
-        
-        if "messages" in result:
-            # 최종 응답(AI의 답변) 메시지만 출력
-            result["messages"][-1].pretty_print()
+    # CLI 대화 루프
+    while True:
+        try:
+            # 사용자 입력 받기
+            user_input = input("👤 You: ").strip()
             
-    except Exception as e:
-        print(f"\n[오류 발생] 실행 중 문제가 발생했습니다: {e}")
-        print("팁: LM Studio나 Ollama 등 로컬 LLM 서버가 활성화되어 있는지 확인해주세요.")
-    
-    print("--- 에이전트 실행 종료 ---")
+            # 종료 조건 확인
+            if user_input.lower() in ["quit", "exit", "q"]:
+                print("\n👋 대화를 종료합니다. 안녕히 가세요!")
+                break
+            
+            # 빈 입력 처리
+            if not user_input:
+                print("⚠️  메시지를 입력해주세요.\n")
+                continue
+            
+            # 에이전트 호출
+            inputs = {"messages": [HumanMessage(content=user_input)]}
+            result = agent.invoke(inputs)
+            
+            # 응답 출력
+            if "messages" in result:
+                print("\n🤖 Agent: ", end="")
+                # content만 추출하여 깔끔하게 출력
+                print(result["messages"][-1].content)
+            print()  # 줄바꿈
+            
+        except KeyboardInterrupt:
+            # Ctrl+C로 종료 시
+            print("\n\n👋 대화를 종료합니다. 안녕히 가세요!")
+            break
+        except Exception as e:
+            print(f"\n❌ [오류 발생] {e}")
+            print("팁: LM Studio나 Ollama 등 로컬 LLM 서버가 활성화되어 있는지 확인해주세요.\n")

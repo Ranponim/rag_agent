@@ -50,7 +50,6 @@ from langgraph.checkpoint.memory import MemorySaver
 # 프로젝트 유틸리티
 from config.settings import get_settings
 from utils.llm_factory import get_llm, get_embeddings, log_llm_error
-from utils.harmony_parser import parse_harmony_tool_call, clean_history_for_harmony
 from utils.vector_store import VectorStoreManager
 
 
@@ -142,10 +141,9 @@ def chat_node(state: IntegratedState) -> dict:
     """
     print("💬 [Chat] 일상 대화 또는 가벼운 응답 생성 중...")
     llm = get_llm()
-    # vLLM 호환성 처리 포함
+    # 시스템 지침과 대화 메시지를 합쳐서 AI에게 전달합니다.
     messages = [SystemMessage(content="당신은 다정하고 똑똑한 비서입니다.")] + state["messages"]
-    cleaned = clean_history_for_harmony(messages)
-    res = llm.invoke(cleaned)
+    res = llm.invoke(messages)
     return {"messages": [res], "steps_taken": state["steps_taken"] + ["chat"]}
 
 
@@ -187,12 +185,8 @@ def tool_agent_node(state: IntegratedState) -> dict:
     llm = get_llm()
     llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
     
-    # vLLM/Harmony 호환성 처리
-    cleaned = clean_history_for_harmony(state["messages"])
-    res = llm_with_tools.invoke(cleaned)
-    
-    # Harmony 포맷 응답 파싱
-    res = parse_harmony_tool_call(res, tools)
+    # AI에게 메시지를 전달하고 도구 호출 응답을 받습니다.
+    res = llm_with_tools.invoke(state["messages"])
     
     return {"messages": [res], "steps_taken": state["steps_taken"] + ["tool_agent"]}
 

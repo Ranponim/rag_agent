@@ -39,7 +39,6 @@ from langgraph.checkpoint.memory import MemorySaver  # 대화 내용을 메모�
 # 프로젝트 공통 유틸리티
 from config.settings import get_settings
 from utils.llm_factory import get_llm, log_llm_error
-from utils.harmony_parser import parse_harmony_tool_call, clean_history_for_harmony
 
 
 # =============================================================================
@@ -93,12 +92,9 @@ def agent_node(state: MessagesState) -> dict:
     # state["messages"] 안에는 메모리 저장소에서 불러온 이전 대화들이 자동으로 들어있습니다.
     messages = [system_message] + state["messages"]
     
-    # 4. 메시지 형식을 깔끔하게 정리하고 AI에게 물어봅니다.
-    cleaned_messages = clean_history_for_harmony(messages)
-    response = llm_with_tools.invoke(cleaned_messages)
+    # 4. AI에게 메시지를 전달하고 응답을 받습니다.
+    response = llm_with_tools.invoke(messages)
     
-    # 5. 응답을 파싱하고 결과를 반환합니다.
-    response = parse_harmony_tool_call(response, tools)
     return {"messages": [response]}
 
 

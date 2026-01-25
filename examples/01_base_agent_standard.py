@@ -119,25 +119,47 @@ def create_graph():
     # 그래프 컴파일 (실행 가능한 앱으로 변환)
     return workflow.compile()
 
-# 5. 실행부
+# 5. 실행부 - CLI 대화형 인터페이스
 if __name__ == "__main__":
     app = create_graph()
     
-    # 테스트 입력 (날씨 정보와 계산 요청)
-    inputs = {"messages": [HumanMessage(content="부산의 날씨를 알려주고, 120 / 5 결과도 알려줘.")]}
+    print("=" * 50)
+    print("🤖 LangGraph Standard 에이전트 (CLI 대화 모드)")
+    print("=" * 50)
+    print("날씨 정보와 계산을 도와드립니다.")
+    print("종료하려면 'quit' 또는 'exit'를 입력하세요.\n")
     
-    # invoke 실행 (최종 결과 출력)
-    print("--- 에이전트 실행 시작 ---")
-    try:
-        # invoke는 모든 노드 실행이 완료된 후 최종 상태(result)를 반환합니다.
-        result = app.invoke(inputs)
-        
-        # 마지막 응답 메시지만 깔끔하게 출력합니다.
-        if "messages" in result:
-            result["messages"][-1].pretty_print()
+    # CLI 대화 루프
+    while True:
+        try:
+            # 사용자 입력 받기
+            user_input = input("👤 You: ").strip()
             
-    except Exception as e:
-        print(f"\n[오류 발생] 실행 중 문제가 발생했습니다: {e}")
-        print("팁: 로컬 LLM 서버(LM Studio 등)의 연결 상태를 확인해주세요.")
-        
-    print("--- 에이전트 실행 종료 ---")
+            # 종료 조건 확인
+            if user_input.lower() in ["quit", "exit", "q"]:
+                print("\n👋 대화를 종료합니다. 안녕히 가세요!")
+                break
+            
+            # 빈 입력 처리
+            if not user_input:
+                print("⚠️  메시지를 입력해주세요.\n")
+                continue
+            
+            # 에이전트 호출
+            inputs = {"messages": [HumanMessage(content=user_input)]}
+            result = app.invoke(inputs)
+            
+            # 응답 출력
+            if "messages" in result:
+                print("\n🤖 Agent: ", end="")
+                # content만 추출하여 깔끔하게 출력
+                print(result["messages"][-1].content)
+            print()  # 줄바꿈
+            
+        except KeyboardInterrupt:
+            # Ctrl+C로 종료 시
+            print("\n\n👋 대화를 종료합니다. 안녕히 가세요!")
+            break
+        except Exception as e:
+            print(f"\n❌ [오류 발생] {e}")
+            print("팁: 로컬 LLM 서버(LM Studio 등)의 연결 상태를 확인해주세요.\n")

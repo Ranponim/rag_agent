@@ -14,7 +14,7 @@ LangGraph에서 에이전트를 구현하는 두 가지 핵심 방식을 학습�
 
 ## 🏗️ 패턴 1: Standard Pattern (명시적 구조)
 
-> 📁 **코드 파일**: [`examples/01_basic_agent_standard.py`](../examples/01_basic_agent_standard.py)
+> 📁 **코드 파일**: [`examples/01_base_agent_standard.py`](../examples/01_base_agent_standard.py)
 
 ### 개념
 `StateGraph`를 사용하여 노드(Node)와 엣지(Edge)를 하나씩 수동으로 구성합니다.  
@@ -66,7 +66,7 @@ app = workflow.compile()
 
 ### 🖥️ 실행 방법
 ```bash
-python examples/01_basic_agent_standard.py
+python examples/01_base_agent_standard.py
 ```
 
 ---
@@ -110,7 +110,7 @@ python examples/01_base_agent_react.py
 
 | 비교 항목 | Standard Pattern | ReAct Pattern |
 |:---|:---|:---|
-| **파일** | `01_basic_agent_standard.py` | `01_base_agent_react.py` |
+| **파일** | `01_base_agent_standard.py` | `01_base_agent_react.py` |
 | **구현 난이도** | 중간 (구조 이해 필요) | 매우 낮음 (함수 호출 한 번) |
 | **코드 양** | 상대적으로 많음 (~50줄) | 매우 적음 (~10줄) |
 | **유연성** | 매우 높음 | 낮음 (정해진 패턴만 가능) |
@@ -188,7 +188,7 @@ def calculate(expression: str) -> str:
 
 | 패턴 | 파일 |
 |------|------|
-| Standard Pattern | [`examples/01_basic_agent_standard.py`](../examples/01_basic_agent_standard.py) |
+| Standard Pattern | [`examples/01_base_agent_standard.py`](../examples/01_base_agent_standard.py) |
 | ReAct Pattern | [`examples/01_base_agent_react.py`](../examples/01_base_agent_react.py) |
 
 ---

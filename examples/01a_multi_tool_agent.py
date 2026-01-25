@@ -40,8 +40,6 @@ from langgraph.prebuilt import ToolNode, tools_condition
 # 프로젝트 내부 설정과 LLM 생성 도우미를 가져옵니다.
 from config.settings import get_settings
 from utils.llm_factory import get_llm, log_llm_error
-# GPT-OSS와 같은 특정 모델의 호환성을 맞추기 위한 정제 도구들을 가져옵니다.
-from utils.harmony_parser import parse_harmony_tool_call, clean_history_for_harmony
 
 
 # =============================================================================
@@ -168,14 +166,8 @@ def agent_node(state: MessagesState) -> dict:
     # 4. [기본 지침] + [이전까지 나눈 대화들]을 합쳐서 AI에게 전달할 메시지 통을 만듭니다.
     messages = [system_message] + state["messages"]
     
-    # 5. 🧹 특정 AI 서버 형식에 맞게 메시지들을 깨끗하게 정리합니다.
-    cleaned_messages = clean_history_for_harmony(messages)
-    
-    # 6. 드디어 AI에게 메시지를 보내고 답변을 받습니다.
-    response = llm_with_tools.invoke(cleaned_messages)
-    
-    # 7. 🔧 AI의 특수 답변(도구 호출 요청)을 우리가 이해할 수 있는 형식으로 다시 바꿉니다.
-    response = parse_harmony_tool_call(response, tools)
+    # 5. AI에게 메시지를 보내고 답변을 받습니다.
+    response = llm_with_tools.invoke(messages)
     
     # 만약 AI가 도구를 쓰기로 했다면, 무엇을 하려는지 콘솔(검은 창)에 보여줍니다.
     if response.tool_calls:
