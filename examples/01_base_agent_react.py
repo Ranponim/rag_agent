@@ -79,12 +79,12 @@ def create_agent():
     system_prompt = "당신은 날씨 정보와 간단한 계산을 도와주는 유용한 비서입니다. 모든 답변은 한국어로 친절하게 하세요."
     
     # create_react_agent를 사용하여 한 줄로 그래프 생성
-    # 참고: 최신 버전의 LangGraph(0.2+)에서는 'state_modifier'를 사용하여 시스템 프롬프트를 설정합니다.
-    # 만약 사용하는 버전에서 에러가 발생한다면, 이 인자를 제거하고 입력을 통해 프롬프트를 관리할 수 있습니다.
+    # 참고: LangGraph 1.0+에서는 'prompt' 파라미터를 사용하여 시스템 프롬프트를 설정합니다.
+    # (이전 버전의 'state_modifier'는 deprecated 되었습니다.)
     agent_executor = create_react_agent(
         model, 
         tools=tools, 
-        state_modifier=system_prompt
+        prompt=system_prompt
     )
     
     return agent_executor

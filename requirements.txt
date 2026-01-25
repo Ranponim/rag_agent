@@ -1,14 +1,16 @@
 # LangGraph RAG Agent 학습 의존성 패키지
 
 # LangGraph 및 LangChain 핵심 패키지
-langgraph>=0.2.0
-langchain>=0.3.0
-langchain-openai>=0.2.0
-langchain-community>=0.3.0
-langchain-core>=0.3.0
+langgraph>=1.0.5
+langgraph-prebuilt>=1.0.5
+langgraph-checkpoint>=3.0.1
+langchain>=1.2.0
+langchain-openai>=1.1.6
+langchain-community>=0.4.1
+langchain-core>=1.2.5
 
 # Vector Store
-chromadb>=0.5.0
+chromadb>=1.4.1
 faiss-cpu>=1.8.0
 
 # 임베딩 및 토크나이저
@@ -16,10 +18,10 @@ tiktoken>=0.7.0
 sentence-transformers>=3.0.0
 
 # 환경 변수 관리
-python-dotenv>=1.0.0
+python-dotenv>=1.1.0
 
 # 유틸리티
-pydantic>=2.0.0
+pydantic>=2.11.5
 httpx>=0.27.0
 
 # 개발 도구 (선택사항)

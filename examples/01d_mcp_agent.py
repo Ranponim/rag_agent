@@ -159,7 +159,7 @@ async def create_mcp_agent(server_configs: dict):
     agent = create_react_agent(
         model,
         tools=tools,
-        state_modifier=system_prompt,
+        prompt=system_prompt,
     )
     
     return client, agent
@@ -248,7 +248,7 @@ async def simple_mcp_example():
         agent = create_react_agent(
             model,
             tools=tools,
-            state_modifier="당신은 라이브러리 문서를 검색하는 전문가입니다."
+            prompt="당신은 라이브러리 문서를 검색하는 전문가입니다."
         )
         
         # 질문 실행
