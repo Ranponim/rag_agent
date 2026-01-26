@@ -2,57 +2,87 @@ import asyncio
 import httpx
 import json
 import sys
+import requests
+import time
 
-async def check_mcp_post_sse(url):
-    print(f"\n🚀 Testing POST-SSE on {url}...")
-    
-    headers = {
-        "Accept": "application/json, text/event-stream",
-        "Content-Type": "application/json"
+# PowerShell 성공 사례 헤더 재현
+COMMON_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Accept": "application/json, text/event-stream",
+    "Content-Type": "application/json",
+    "Connection": "keep-alive"
+}
+
+# MCP Initialize 페이로드 (PowerShell $body 추정값)
+INITIALIZE_PAYLOAD = {
+    "jsonrpc": "2.0",
+    "method": "initialize",
+    "id": 1,
+    "params": {
+        "protocolVersion": "2024-11-05",
+        "capabilities": {},
+        "clientInfo": {"name": "mcp-checker", "version": "1.0.0"}
     }
-    
-    payload = {
-        "jsonrpc": "2.0",
-        "method": "list_tools",
-        "id": 1
-    }
-    
+}
+
+def test_with_requests(url):
+    print(f"\n--- [Requests Sync Test] {url} ---")
     try:
-        # 165.213.69.30 주소로 테스트
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            print(f"📡 Sending POST request with body: {json.dumps(payload)}")
-            
-            # 스트리밍 응답 처리를 위해 client.stream 사용
-            async with client.stream("POST", url, headers=headers, json=payload) as response:
-                print(f"✅ Response Status: {response.status_code}")
-                print(f"📝 Response Headers: {dict(response.headers)}")
-                
-                # 첫 번째 chunk 확인
+        with requests.post(url, headers=COMMON_HEADERS, json=INITIALIZE_PAYLOAD, stream=True, timeout=10) as r:
+            print(f"✅ Status: {r.status_code} {r.reason}")
+            print(f"📝 Headers: {dict(r.headers)}")
+            # 첫 번째 데이터 라인만 읽어봄
+            count = 0
+            for line in r.iter_lines():
+                if line:
+                    print(f"📊 Received: {line.decode('utf-8')}")
+                    count += 1
+                    if count >= 3: break # 너무 많이 읽지 않음
+            if count > 0:
+                print("🎉 SUCCESS: Successfully received SSE data using requests!")
+    except Exception as e:
+        print(f"❌ Requests Failed: {type(e).__name__}: {e}")
+
+async def test_with_httpx(url):
+    print(f"\n--- [Httpx Async Test] {url} ---")
+    try:
+        async with httpx.AsyncClient(http1=True, http2=False, timeout=10.0) as client:
+            print("📡 Sending POST with stream=True...")
+            async with client.stream("POST", url, headers=COMMON_HEADERS, json=INITIALIZE_PAYLOAD) as response:
+                print(f"✅ Status: {response.status_code}")
+                print(f"📝 Headers: {dict(response.headers)}")
+                count = 0
                 async for line in response.aiter_lines():
                     if line.strip():
                         print(f"📊 Received: {line}")
-                        # 첫 메시지만 확인하고 종료
-                        if "data:" in line:
-                            break
-                            
-    except httpx.ConnectTimeout:
-        print("❌ Connection Timeout: 서버에 연결할 수 없습니다. (방화벽 또는 서버 다운)")
+                        count += 1
+                        if count >= 3: break
+                if count > 0:
+                    print("🎉 SUCCESS: Successfully received SSE data using httpx!")
     except httpx.RemoteProtocolError as e:
-        print(f"❌ Remote Protocol Error: {e}")
-        print("💡 분석: 서버가 응답 중 연결을 예기치 않게 끊었습니다. 헤더 불일치 또는 서버 측 오류일 수 있습니다.")
+        print(f"❌ Httpx RemoteProtocolError: {e}")
+        print("💡 분석: 서버가 응답을 보내기 전에 연결을 끊었습니다. (Keep-alive 또는 포맷 이슈)")
     except Exception as e:
-        print(f"❌ Unexpected Error: {type(e).__name__}: {e}")
+        print(f"❌ Httpx Failed: {type(e).__name__}: {e}")
 
 async def main():
-    # 사용자의 성공 사례 IP: 165.213.69.30
-    remote_url = "http://165.213.69.30:8001/mcp"
-    await check_mcp_post_sse(remote_url)
-    
-    # 로컬 테스트 (사용자가 요청한 환경)
+    target_url = "http://165.213.69.30:8001/mcp"
     local_url = "http://localhost:8001/mcp"
-    await check_mcp_post_sse(local_url)
+    
+    # 원격 테스트
+    print("🚀 [REMOTE] Testing 165.213.69.30:8001...")
+    test_with_requests(target_url)
+    await test_with_httpx(target_url)
+    
+    # 로컬 테스트
+    print("\n🚀 [LOCAL] Testing localhost:8001...")
+    test_with_requests(local_url)
+    await test_with_httpx(local_url)
 
 if __name__ == "__main__":
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
