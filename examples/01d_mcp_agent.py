@@ -97,17 +97,15 @@ MCP_SERVER_CONFIGS = {
     },
     
     # 예시 3: Analysis LLM MCP 서버 (3GPP 분석 도구)
-    # Docker 환경에서 실행 중인 MCP 서버에 연결합니다.
+    # 원격 IP(165...)는 Python 환경에서 접근 불가하므로 localhost를 타겟으로 합니다.
     # Transport: streamable_http (HTTP 스트리밍 방식)
-    # ⚠️ 주의: 서버가 http://165.213.69.30:8001/mcp 에서 실행 중이어야 합니다.
     "analysis_llm": {
         "transport": "streamable_http", 
-        "url": "http://165.213.69.30:8001/mcp",  # /mcp 엔드포인트로 복구
-        # 인증이 필요한 경우 아래 주석을 해제하고 토큰을 설정하세요.
-        # "headers": {
-        #     "Authorization": "Bearer YOUR_API_TOKEN",
-        #     "X-Custom-Header": "custom-value"
-        # },
+        "url": "http://localhost:8001/mcp",  # localhost 주소로 변경
+        # PowerShell 성공 시 사용된 헤더를 MCPClientManager가 자동 주입합니다.
+        "headers": {
+            "Accept": "application/json, text/event-stream"
+        },
     },
     
     # 예시 4: 커스텀 로컬 MCP 서버 (Python 기반)
@@ -164,11 +162,12 @@ async def create_mcp_agent(server_configs: dict):
     print(f"{'='*70}\n")
     
     # MCP 클라이언트 매니저 생성 및 연결
-    # MCPClientManager는 연결 관리, 오류 처리, 재시도를 자동으로 처리합니다.
+    # MCPClientManager는 PowerShell 성공 사례의 헤더(Connection: keep-alive 등)를 
+    # 자동으로 주입하여 RemoteProtocolError를 방지합니다.
     manager = MCPClientManager(
-        server_configs=server_configs,  # MCP 서버 설정
-        max_retries=3,                  # 연결 실패 시 최대 3회 재시도
-        retry_delay=1.0                 # 재시도 간 1초 대기 (exponential backoff 적용)
+        server_configs=server_configs,
+        max_retries=3,
+        retry_delay=2.0  # 서버 응답 대기 시간을 고려하여 지연 시간 상향
     )
     
     # 서버 연결 시도 (내부적으로 재시도 로직 포함)

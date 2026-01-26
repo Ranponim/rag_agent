@@ -59,6 +59,9 @@ TEST_SERVER_CONFIGS = {
     "analysis_llm": {
         "transport": "streamable_http",  # HTTP 스트리밍 방식
         "url": "http://165.213.69.30:8001/mcp",  # MCP 서버 엔드포인트
+        "headers": {
+            "Accept": "application/json, text/event-stream"
+        },
     },
     
     # 필요시 다른 서버도 추가 가능
@@ -97,7 +100,7 @@ async def test_mcp_connection():
         manager = MCPClientManager(
             server_configs=TEST_SERVER_CONFIGS,
             max_retries=3,
-            retry_delay=1.0
+            retry_delay=2.0  # 지연 시간 상향
         )
         print("   ✅ MCPClientManager 생성 완료\n")
         
