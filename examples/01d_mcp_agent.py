@@ -97,12 +97,12 @@ MCP_SERVER_CONFIGS = {
     },
     
     # 예시 3: Analysis LLM MCP 서버 (3GPP 분석 도구)
-    # Docker 환경에서 실행 중인 HTTP 기반 MCP 서버에 연결합니다.
+    # Docker 환경에서 실행 중인 MCP 서버에 연결합니다.
     # Transport: streamable_http (HTTP 스트리밍 방식)
     # ⚠️ 주의: 서버가 http://165.213.69.30:8001/mcp 에서 실행 중이어야 합니다.
     "analysis_llm": {
-        "transport": "streamable_http",  # HTTP 기반 통신
-        "url": "http://165.213.69.30:8001/mcp",  # MCP 서버 엔드포인트
+        "transport": "streamable_http", 
+        "url": "http://165.213.69.30:8001/mcp",  # /mcp 엔드포인트로 복구
         # 인증이 필요한 경우 아래 주석을 해제하고 토큰을 설정하세요.
         # "headers": {
         #     "Authorization": "Bearer YOUR_API_TOKEN",
