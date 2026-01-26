@@ -26,60 +26,71 @@ INITIALIZE_PAYLOAD = {
 LIST_TOOLS_PAYLOAD = {
     "jsonrpc": "2.0",
     "method": "list_tools",
+    "params": {}, # 명시적으로 빈 params 추가
     "id": 2
 }
 
 def test_requests(url):
     print(f"\n🚀 [Requests Test] Target: {url}")
-    # 프록시를 강제로 비활성화하여 환경 격리
     proxies = {"http": None, "https": None}
     
     try:
         session = requests.Session()
         session.proxies = proxies
         
-        print("1. Sending 'initialize'...")
-        resp = session.post(url, headers=COMMON_HEADERS, json=INITIALIZE_PAYLOAD, timeout=10)
+        print(f"1. Sending 'initialize' to {url}...")
+        resp = session.post(url, headers=COMMON_HEADERS, json=INITIALIZE_PAYLOAD, timeout=15)
         print(f"   Status: {resp.status_code}")
+        
+        # mcp-session-id 추출
+        session_id = resp.headers.get("mcp-session-id")
+        print(f"   mcp-session-id: {session_id}")
+        
         if resp.status_code == 200:
-            print(f"   Response: {resp.text[:200]}...")
+            custom_headers = COMMON_HEADERS.copy()
+            if session_id:
+                custom_headers["mcp-session-id"] = session_id
+                print(f"   Applying mcp-session-id to next request...")
             
-            print("2. Sending 'list_tools'...")
-            resp = session.post(url, headers=COMMON_HEADERS, json=LIST_TOOLS_PAYLOAD, timeout=10)
+            print(f"\n2. Sending 'list_tools' with session-id...")
+            resp = session.post(url, headers=custom_headers, json=LIST_TOOLS_PAYLOAD, timeout=15)
             print(f"   Status: {resp.status_code}")
-            print(f"   Response: {resp.text[:200]}...")
+            print(f"   Full Response: {resp.text}")
         else:
-            print(f"   Failed to initialize: {resp.text}")
+            print(f"   Failed to initialize.")
             
     except Exception as e:
         print(f"❌ Requests Failed: {type(e).__name__}: {e}")
 
 async def test_httpx(url):
     print(f"\n🚀 [Httpx Test] Target: {url}")
-    # httpx에서 프록시 무시 및 HTTP/1.1 강제
     try:
         async with httpx.AsyncClient(
-            trust_env=False, # 환경변수 프록시 무시
+            trust_env=False, 
             http1=True,
             http2=False,
             headers=COMMON_HEADERS,
-            timeout=10.0
+            timeout=15.0
         ) as client:
-            print("1. Sending 'initialize'...")
+            print(f"1. Sending 'initialize' to {url}...")
             resp = await client.post(url, json=INITIALIZE_PAYLOAD)
             print(f"   Status: {resp.status_code}")
+            
+            session_id = resp.headers.get("mcp-session-id")
+            print(f"   mcp-session-id: {session_id}")
+            
             if resp.status_code == 200:
-                print(f"   Response: {resp.text[:200]}...")
+                headers = COMMON_HEADERS.copy()
+                if session_id:
+                    headers["mcp-session-id"] = session_id
                 
-                print("2. Sending 'list_tools'...")
-                resp = await client.post(url, json=LIST_TOOLS_PAYLOAD)
+                print(f"\n2. Sending 'list_tools' with session-id...")
+                resp = await client.post(url, json=LIST_TOOLS_PAYLOAD, headers=headers)
                 print(f"   Status: {resp.status_code}")
-                print(f"   Response: {resp.text[:200]}...")
+                print(f"   Full Response: {resp.text}")
             else:
-                print(f"   Failed: {resp.text}")
+                print(f"   Failed to initialize.")
                 
-    except httpx.RemoteProtocolError as e:
-        print(f"❌ Httpx RemoteProtocolError: {e}")
     except Exception as e:
         print(f"❌ Httpx Failed: {type(e).__name__}: {e}")
 
