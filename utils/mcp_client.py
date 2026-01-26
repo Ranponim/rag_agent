@@ -164,6 +164,9 @@ class MCPClientManager:
         """
         MCP 서버에 연결합니다.
         
+        langchain-mcp-adapters 0.1.0부터 MultiServerMCPClient는
+        context manager를 지원하지 않으므로 직접 객체를 생성합니다.
+        
         연결 실패 시 자동으로 재시도하며, exponential backoff를 적용합니다.
         모든 재시도가 실패하면 예외를 발생시킵니다.
         
@@ -198,22 +201,20 @@ class MCPClientManager:
                     elif transport == "stdio":
                         logger.info(f"  💻 [{server_name}] Command: {config['command']} {config['args']}")
                 
-                # MultiServerMCPClient 생성 및 연결
+                # MultiServerMCPClient 생성
+                # langchain-mcp-adapters 0.1.0부터는 context manager를 사용하지 않음
                 self.client = MultiServerMCPClient(self.server_configs)
                 
-                # async context manager 진입 (__aenter__ 호출)
-                # 이 단계에서 실제 서버 연결이 수행됩니다.
-                await self.client.__aenter__()
-                
-                # 연결 성공
+                # 연결 성공 (0.1.0에서는 생성만으로 연결 준비 완료)
+                # 실제 연결은 get_tools() 호출 시 이루어짐
                 self.connected = True
-                logger.info(f"✅ [MCP] 모든 서버 연결 성공!")
+                logger.info(f"✅ [MCP] 클라이언트 생성 완료!")
                 
                 return self
                 
             except Exception as e:
                 # 연결 실패 로그
-                logger.error(f"❌ [MCP] 연결 실패 (시도 {attempt + 1}/{self.max_retries}): {e}")
+                logger.error(f"❌ [MCP] 클라이언트 생성 실패 (시도 {attempt + 1}/{self.max_retries}): {e}")
                 
                 # 마지막 시도였으면 예외 발생
                 if attempt == self.max_retries - 1:
@@ -252,8 +253,9 @@ class MCPClientManager:
         
         try:
             # MCP 클라이언트에서 도구 가져오기
+            # langchain-mcp-adapters 0.1.0에서는 get_tools()가 async 메서드
             logger.info("🔧 [MCP] 도구 목록 가져오는 중...")
-            tools = self.client.get_tools()
+            tools = await self.client.get_tools()  # await 추가!
             
             # 도구 정보 로그
             logger.info(f"✅ [MCP] {len(tools)}개의 도구를 발견했습니다:")
@@ -272,6 +274,9 @@ class MCPClientManager:
         """
         MCP 서버 연결을 안전하게 종료합니다.
         
+        langchain-mcp-adapters 0.1.0에서는 자동으로 연결이 관리되므로
+        명시적인 종료가 필요 없습니다. 상태만 초기화합니다.
+        
         리소스를 정리하고 연결 상태를 초기화합니다.
         이미 연결이 끊어진 상태에서 호출해도 안전합니다.
         
@@ -284,11 +289,11 @@ class MCPClientManager:
             return
         
         try:
-            # async context manager 종료 (__aexit__ 호출)
+            # langchain-mcp-adapters 0.1.0에서는 context manager를 사용하지 않음
+            # 따라서 __aexit__() 호출 불필요
             logger.info("🔌 [MCP] 연결 종료 중...")
-            await self.client.__aexit__(None, None, None)
             
-            # 상태 초기화
+            # 상태 초기화만 수행
             self.client = None
             self.connected = False
             
