@@ -75,6 +75,7 @@ def my_agent_node(state: MessagesState):
 
 ## 🔗 관련 예제 파일
 이 로직이 실제로 적용된 코드를 확인하려면 다음 파일을 참고하세요:
-- [01_basic_agent.py](../examples/01_basic_agent.py)
+- [01_base_agent_react.py](../examples/01_base_agent_react.py)
+- [01_base_agent_standard.py](../examples/01_base_agent_standard.py)
 - [01a_multi_tool_agent.py](../examples/01a_multi_tool_agent.py)
 - [05_integrated_test.py](../examples/05_integrated_test.py)

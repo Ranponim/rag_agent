@@ -7,8 +7,9 @@ LangGraph 에이전트에서 활용하는 방법을 학습합니다.
 
 ## 🎯 학습 목표
 1. **MCP 개념 이해**: AI 모델이 외부 도구/리소스에 접근하는 표준 프로토콜
-2. **서버 등록 방법**: stdio, SSE 트랜스포트를 통한 MCP 서버 연결
+2. **서버 등록 방법**: stdio, SSE, streamable-http 트랜스포트를 통한 MCP 서버 연결
 3. **도구 바인딩**: MCP 도구를 LangGraph 에이전트에 통합
+4. **Resilience**: `MCPClientManager`를 통한 재연결 및 오류 처리
 
 ---
 
@@ -16,18 +17,13 @@ LangGraph 에이전트에서 활용하는 방법을 학습합니다.
 
 **MCP (Model Context Protocol)** 는 AI 모델이 외부 도구, 데이터, 서비스에 접근하기 위한 표준화된 프로토콜입니다.
 
-### 주요 특징
-- **표준화**: 다양한 도구를 일관된 방식으로 연결
-- **확장성**: 새로운 MCP 서버를 쉽게 추가 가능
-- **분리**: 도구 구현과 에이전트 로직을 분리
-
 ### 트랜스포트 방식
 
 | 방식 | 설명 | 사용 사례 |
 |------|------|----------|
 | **stdio** | 로컬 프로세스로 서버 실행 | npx로 패키지 실행, 로컬 Python 서버 |
 | **sse** | HTTP Server-Sent Events | 원격 서버 연결 |
-| **streamable-http** | HTTP 스트리밍 | 대용량 응답 처리 |
+| **streamable-http** | HTTP 스트리밍 | 대용량 응답 처리 (vLLM 등) |
 
 ---
 
@@ -46,35 +42,42 @@ pip install langchain-mcp-adapters langgraph
 ```python
 MCP_SERVER_CONFIGS = {
     "서버_이름": {
-        "command": "실행_명령어",  # 예: "npx", "python"
+        "command": "실행_명령어",
         "args": ["인자1", "인자2"],
-        "transport": "stdio",  # 또는 "sse"
+        "transport": "stdio",
     },
+     "원격_서버": {
+        "url": "http://localhost:8001/mcp",
+        "transport": "streamable_http", 
+    }
 }
 ```
 
-### 예시: 자주 사용하는 MCP 서버들
+### 예시: 본 예제에서 사용하는 서버들
 
 ```python
 MCP_SERVER_CONFIGS = {
-    # Context7: 라이브러리 문서 검색
+    # Context7: 라이브러리 문서 검색 (npx 실행)
     "context7": {
         "command": "npx",
         "args": ["-y", "@upstash/context7-mcp@latest"],
         "transport": "stdio",
     },
     
-    # Sequential Thinking: 단계별 사고 도구
-    "sequential_thinking": {
-        "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-        "transport": "stdio",
+    # Analysis LLM: 3GPP 분석 도구 (HTTP 스트리밍)
+    "analysis_llm": {
+        "transport": "streamable_http", 
+        "url": "http://localhost:8001/mcp", 
+        "headers": {
+            "Accept": "application/json, text/event-stream"
+        },
     },
     
-    # 원격 서버 (SSE 방식)
-    "remote_server": {
-        "url": "http://localhost:8000/sse",
-        "transport": "sse",
+    # Directory Explorer: 로컬 파일 탐색 (Python 실행)
+    "directory_explorer": {
+        "command": "python",
+        "args": ["mcp/simple_dir_mcp.py"],
+        "transport": "stdio",
     },
 }
 ```
@@ -83,38 +86,46 @@ MCP_SERVER_CONFIGS = {
 
 ## 🔑 핵심 코드
 
-### 1. MCP 클라이언트 연결
+### 1. MCPClientManager를 통한 연결 관리
+
+기존의 단순 `MultiServerMCPClient` 대신, 재시도 및 오류 처리가 포함된 `MCPClientManager`를 사용합니다.
 
 ```python
-from langchain_mcp_adapters.client import MultiServerMCPClient
+from utils.mcp_client import MCPClientManager
 
-# async context manager로 서버 연결
-async with MultiServerMCPClient(MCP_SERVER_CONFIGS) as client:
-    # MCP 서버에서 제공하는 도구 가져오기
-    tools = client.get_tools()
-    print(f"사용 가능한 도구: {[t.name for t in tools]}")
+# 매니저 생성
+manager = MCPClientManager(
+    server_configs=server_configs,
+    max_retries=3,
+    retry_delay=2.0
+)
+
+# 서버 연결 (비동기)
+await manager.connect()
+
+# 도구 가져오기
+tools = await manager.get_tools()
 ```
 
-### 2. 에이전트 생성 및 실행
+### 2. Stream 모드 실행 (astream)
+
+create_react_agent로 생성된 에이전트는 `astream`을 통해 실행 과정을 실시간으로 확인할 수 있습니다.
 
 ```python
-from langgraph.prebuilt import create_react_agent
-from langchain_openai import ChatOpenAI
-
-async with MultiServerMCPClient(MCP_SERVER_CONFIGS) as client:
-    model = ChatOpenAI(model="gpt-4")
-    
-    # MCP 도구를 에이전트에 전달
-    agent = create_react_agent(
-        model,
-        tools=client.get_tools(),
-        prompt="유용한 AI 어시스턴트입니다."
-    )
-    
-    # 비동기 실행
-    result = await agent.ainvoke(
-        {"messages": [HumanMessage(content="LangGraph 사용법 알려줘")]}
-    )
+async for chunk in agent.astream(
+    {"messages": [HumanMessage(content="질문")]},
+    stream_mode="values"
+):
+    if "messages" in chunk:
+        last_msg = chunk["messages"][-1]
+        
+        # 도구 호출 확인
+        if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
+            print(f"도구 호출: {last_msg.tool_calls}")
+            
+        # AI 응답 확인
+        elif hasattr(last_msg, 'content') and last_msg.content:
+            print(f"응답: {last_msg.content}")
 ```
 
 ---
@@ -127,16 +138,21 @@ graph LR
         A[create_react_agent]
     end
     
-    subgraph MCP["MCP Servers"]
-        B[Context7]
-        C[Sequential Thinking]
-        D[Custom Server]
+    subgraph Client["MCP Client Manager"]
+        M[Connection Manager]
+        R[Retry Logic]
     end
     
-    Client[MultiServerMCPClient] --> B
-    Client --> C
-    Client --> D
-    A --> Client
+    subgraph MCP["MCP Servers"]
+        B[Context7<br/>(stdio)]
+        C[Analysis LLM<br/>(http)]
+        D[Directory Explorer<br/>(stdio)]
+    end
+    
+    A --> M
+    M --> B
+    M --> C
+    M --> D
     
     style A fill:#e1f5fe,stroke:#0277bd
     style Client fill:#fff3e0,stroke:#ef6c00
@@ -150,72 +166,28 @@ graph LR
 python examples/01d_mcp_agent.py
 ```
 
-### 예상 출력
+### 실행 후 인터랙티브 모드
 ```
-🌐 LangGraph MCP Agent Example
-============================================================
-🙋 사용자: LangGraph의 create_react_agent 함수 사용법을 알려줘
-============================================================
-📦 [MCP] 연결된 서버: ['context7']
-🔧 [MCP] 사용 가능한 도구: ['resolve-library-id', 'query-docs']
+💬 MCP Interactive Chat Mode
+======================================================================
+MCP 서버에 연결하고 에이전트를 초기화합니다...
 
-🤖 Agent: create_react_agent는 LangGraph에서 제공하는 프리빌트 함수로...
+✅ 준비 완료! 대화를 시작하세요. (종료하려면 'q' 또는 'quit' 입력)
+----------------------------------------------------------------------
+
+🙋 User: Context7을 사용해서 LangGraph 문서 찾아줘
 ```
 
 ---
 
 ## ⚠️ 주의사항
 
-### 1. 비동기 실행 필수
-MCP 클라이언트는 비동기(async)로 동작합니다.
-
-```python
-import asyncio
-
-# asyncio.run()으로 비동기 함수 실행
-asyncio.run(run_mcp_agent("질문"))
-```
-
-### 2. 컨텍스트 매니저 사용
-`async with` 블록 안에서만 MCP 연결이 유지됩니다.
-
-```python
-# ✅ 올바른 사용
-async with MultiServerMCPClient(configs) as client:
-    tools = client.get_tools()
-    # 여기서만 tools 사용 가능
-
-# ❌ 잘못된 사용
-client = MultiServerMCPClient(configs)
-tools = client.get_tools()  # 연결되지 않음!
-```
-
-### 3. 서버 가용성 확인
-MCP 서버가 실행 가능한 상태인지 먼저 확인하세요.
-
-```bash
-# npx 기반 서버 테스트
-npx -y @upstash/context7-mcp@latest
-```
+1. **사전 요구사항**: `npx` (Node.js)가 설치되어 있어야 Context7 서버가 실행됩니다.
+2. **서버 실행**: `analysis_llm` 같은 HTTP 기반 MCP 서버는 별도로 실행 중이어야 연결 가능합니다. (실행되어 있지 않으면 연결 실패 로그가 뜨지만, 다른 서버는 정상 작동합니다)
+3. **리소스 정리**: `manager.disconnect()`를 호출하여 하위 프로세스를 깔끔하게 종료해야 합니다.
 
 ---
 
 ## 💻 전체 코드 확인
 
 [`examples/01d_mcp_agent.py`](../examples/01d_mcp_agent.py)
-
----
-
-## 🔗 관련 예제
-
-| 예제 | 주제 |
-|------|------|
-| [01. Basic Agent](01_basic_agent.md) | Standard/ReAct 패턴 비교 |
-| [01a. Multi-Tool Agent](01a_multi_tool_agent.md) | 다중 도구 관리 |
-| [01c. Multi-Agent](01c_multi_agent.md) | Supervisor 패턴 |
-
----
-
-## 다음 단계
-
-➡️ [02. Naive RAG](02_naive_rag.md) - 기본 RAG 파이프라인 구현

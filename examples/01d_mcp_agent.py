@@ -46,9 +46,7 @@ from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
-# MCP 어댑터 (MCP 서버 연결용)
-# pip install langchain-mcp-adapters
-from langchain_mcp_adapters.client import MultiServerMCPClient
+
 
 # 프로젝트 설정 로드
 from config.settings import get_settings
@@ -81,11 +79,11 @@ MCP_SERVER_CONFIGS = {
     # 예시 1: Context7 MCP 서버 (라이브러리 문서 검색)
     # npx를 통해 자동으로 패키지를 다운로드하고 실행합니다.
     # Transport: stdio (로컬 프로세스로 실행)
-    "context7": {
-        "command": "npx",
-        "args": ["-y", "@upstash/context7-mcp@latest"],
-        "transport": "stdio",
-    },
+    # "context7": {
+    #     "command": "npx",
+    #     "args": ["-y", "@upstash/context7-mcp@latest"],
+    #     "transport": "stdio",
+    # },
     
     # 예시 2: Sequential Thinking MCP 서버 (단계별 사고)
     # 복잡한 문제를 단계별로 분석하는 사고 도구를 제공합니다.
@@ -99,14 +97,14 @@ MCP_SERVER_CONFIGS = {
     # 예시 3: Analysis LLM MCP 서버 (3GPP 분석 도구)
     # 원격 IP(165...)는 Python 환경에서 접근 불가하므로 localhost를 타겟으로 합니다.
     # Transport: streamable_http (HTTP 스트리밍 방식)
-    "analysis_llm": {
-        "transport": "streamable_http", 
-        "url": "http://localhost:8001/mcp",  # localhost 주소로 변경
-        # PowerShell 성공 시 사용된 헤더를 MCPClientManager가 자동 주입합니다.
-        "headers": {
-            "Accept": "application/json, text/event-stream"
-        },
-    },
+    # "analysis_llm": {
+    #     "transport": "streamable_http", 
+    #     "url": "http://localhost:8001/mcp",  # localhost 주소로 변경
+    #     # PowerShell 성공 시 사용된 헤더를 MCPClientManager가 자동 주입합니다.
+    #     "headers": {
+    #         "Accept": "application/json, text/event-stream"
+    #     },
+    # },
     
     # 예시 4: 커스텀 로컬 MCP 서버 (Python 기반)
     # 직접 만든 MCP 서버를 연결할 때 사용합니다.
@@ -124,6 +122,13 @@ MCP_SERVER_CONFIGS = {
     #     "url": "http://localhost:8000/sse",
     #     "transport": "sse",
     # },
+    
+    # [NEW] 로컬 PC 디렉토리 탐색 MCP (FastMCP)
+    "directory_explorer": {
+        "command": "python",
+        "args": [str(Path(__file__).parent.parent / "mcp" / "simple_dir_mcp.py")],
+        "transport": "stdio",
+    },
 }
 
 
@@ -214,221 +219,113 @@ async def create_mcp_agent(server_configs: dict):
     return manager, agent
 
 
+
+
+
+
+
+
+
 # =============================================================================
-# ▶️ 3. 에이전트 실행 함수
+# 🔄 4. 대화형 실행 함수 (CLI Chat)
 # =============================================================================
 
-async def run_mcp_agent(query: str, server_configs: dict = None):
+async def run_interactive_mcp_agent(server_configs: dict = None):
     """
-    MCP 에이전트를 실행하여 사용자 질문에 답변합니다.
-    
-    이 함수는 다음 단계를 수행합니다:
-    1. MCP 서버에 연결
-    2. 도구를 가져와 에이전트 생성
-    3. 사용자 질문을 에이전트에 전달
-    4. 결과를 출력
-    5. 연결 종료 (finally 블록에서 안전하게 처리)
-    
-    Args:
-        query (str): 사용자 질문
-        server_configs (dict, optional): MCP 서버 설정. None이면 기본 설정 사용
-    
-    Raises:
-        Exception: MCP 연결 실패, 도구 가져오기 실패, 에이전트 실행 실패 시
-    
-    Example:
-        >>> await run_mcp_agent("LangGraph의 주요 기능을 알려줘")
+    사용자와 대화하며 MCP 에이전트를 실행하는 대화형 루프입니다.
+    연결을 유지한 상태로 연속적인 대화가 가능합니다.
     """
-    # 서버 설정이 없으면 기본 설정 사용
     if server_configs is None:
         server_configs = MCP_SERVER_CONFIGS
-    
-    # 사용자 질문 출력 (시각적 구분을 위해 구분선 사용)
+
     print(f"\n{'='*70}")
-    print(f"🙋 사용자 질문: {query}")
-    print('='*70)
-    
-    # MCP 클라이언트 매니저 (finally에서 연결 종료를 위해 변수 선언)
+    print("💬 MCP Interactive Chat Mode")
+    print(f"{'='*70}")
+    print("MCP 서버에 연결하고 에이전트를 초기화합니다...\n")
+
     manager = None
     
     try:
-        # ========================================
-        # 1단계: MCP 에이전트 생성 (서버 연결 포함)
-        # ========================================
-        print("\n[1/3] MCP 서버 연결 및 에이전트 생성 중...")
+        # 1. 초기화 (한 번만 수행)
         manager, agent = await create_mcp_agent(server_configs)
         
-        # ========================================
-        # 2단계: 에이전트 실행 (스트리밍 방식)
-        # ========================================
-        print("[2/3] 에이전트 실행 중...\n")
+        # 대화 기록 유지
+        chat_history = []
         
-        # astream()을 사용하여 각 단계를 실시간으로 확인
-        # 이를 통해 어떤 도구가 선택되었는지, 어떤 파라미터로 호출되었는지 추적 가능
-        final_response = None
-        step_count = 0
+        print("\n✅ 준비 완료! 대화를 시작하세요. (종료하려면 'q' 또는 'quit' 입력)")
+        print(f"{'-'*70}\n")
         
-        # HumanMessage로 사용자 입력을 감싸서 전달
-        async for chunk in agent.astream(
-            {"messages": [HumanMessage(content=query)]},
-            stream_mode="values"  # 전체 상태를 반환 (메시지 리스트 포함)
-        ):
-            # 각 chunk는 현재 상태의 스냅샷
-            # messages 키에 현재까지의 모든 메시지가 담겨 있음
-            if "messages" in chunk:
-                messages = chunk["messages"]
-                
-                # 마지막 메시지 확인
-                if messages:
-                    last_msg = messages[-1]
+        while True:
+            try:
+                # 사용자 입력
+                query = input("\n🙋 User: ").strip()
+                if not query:
+                    continue
                     
-                    # AI 메시지인지 확인 (도구 호출 또는 최종 응답)
-                    if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
-                        # 도구 호출이 있는 경우
-                        step_count += 1
-                        print(f"\n🔧 [Step {step_count}] 도구 호출 감지:")
-                        
-                        for tool_call in last_msg.tool_calls:
-                            # 도구 이름 출력
-                            tool_name = tool_call.get('name', 'Unknown')
-                            print(f"  📌 도구: {tool_name}")
-                            
-                            # 도구 파라미터 출력
-                            tool_args = tool_call.get('args', {})
-                            if tool_args:
-                                print(f"  📝 파라미터:")
-                                for key, value in tool_args.items():
-                                    # 값이 너무 길면 잘라서 표시
-                                    value_str = str(value)
-                                    if len(value_str) > 100:
-                                        value_str = value_str[:100] + "..."
-                                    print(f"     - {key}: {value_str}")
-                            
-                            print()  # 빈 줄 추가
-                    
-                    # ToolMessage인지 확인 (도구 실행 결과)
-                    elif hasattr(last_msg, '__class__') and last_msg.__class__.__name__ == 'ToolMessage':
-                        print(f"✅ [Step {step_count}] 도구 실행 완료")
-                        
-                        # 도구 실행 결과 출력 (너무 길면 생략)
-                        content = last_msg.content
-                        if len(content) > 200:
-                            print(f"  📊 결과: {content[:200]}...\n")
-                        else:
-                            print(f"  📊 결과: {content}\n")
+                if query.lower() in ['q', 'quit', 'exit']:
+                    print("\n👋 대화를 종료합니다.")
+                    break
                 
-                # 최종 응답 저장
-                final_response = chunk
-        
-        # ========================================
-        # 3단계: 결과 출력
-        # ========================================
-        print(f"\n{'='*70}")
-        print(f"[3/3] 실행 완료 (총 {step_count}개 도구 호출)")
-        print(f"{'='*70}\n")
-        
-        # 최종 응답 출력
-        if final_response and final_response.get("messages"):
-            final_msg = final_response["messages"][-1]
-            
-            # 최종 메시지가 AI 응답인 경우
-            if hasattr(final_msg, 'content') and final_msg.content:
-                print(f"🤖 AI 최종 응답:\n{final_msg.content}\n")
-            else:
-                print("⚠️ 경고: 최종 응답이 비어있습니다.")
-        else:
-            # 메시지가 없는 경우 (예상치 못한 상황)
-            print("⚠️ 경고: 에이전트 응답이 비어있습니다.")
-        
-    except ValueError as e:
-        # 설정 검증 오류 (서버 설정이 잘못된 경우)
-        print(f"\n❌ 설정 오류: {e}")
-        print("💡 해결 방법:")
-        print("   - MCP_SERVER_CONFIGS의 각 서버 설정을 확인하세요.")
-        print("   - transport, url, command 등 필수 필드가 올바른지 확인하세요.")
-        raise
-        
-    except ConnectionError as e:
-        # 네트워크 연결 오류 (서버에 접근할 수 없는 경우)
-        print(f"\n❌ 연결 오류: {e}")
-        print("💡 해결 방법:")
-        print("   - MCP 서버가 실행 중인지 확인하세요.")
-        print("   - 네트워크 연결과 방화벽 설정을 확인하세요.")
-        print("   - URL이 올바른지 확인하세요.")
-        raise
-        
+                # 메시지 구성 (기존 히스토리 + 새 질문)
+                current_messages = chat_history + [HumanMessage(content=query)]
+                
+                print(f"\n🤖 Agent 생각 중...", end="", flush=True)
+                
+                # 스트리밍 실행
+                step_count = 0
+                final_response_chunk = None
+                
+                # astream을 사용하여 실행 과정 시각화
+                async for chunk in agent.astream(
+                    {"messages": current_messages},
+                    stream_mode="values"
+                ):
+                    if "messages" in chunk:
+                        messages = chunk["messages"]
+                        if messages:
+                            last_msg = messages[-1]
+                            
+                            # 도구 호출 로깅
+                            if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
+                                step_count += 1
+                                print(f"\n\n🔧 [Step {step_count}] 도구 호출:")
+                                for tool_call in last_msg.tool_calls:
+                                    print(f"  📌 {tool_call.get('name')}: {tool_call.get('args')}")
+                                print("  ⏳ 실행 중...", end="", flush=True)
+                            
+                            # 도구 결과 로깅
+                            elif hasattr(last_msg, 'content') and last_msg.content and len(messages) > len(current_messages):
+                                # AI의 중간 응답이나 최종 응답이 아닐 때 (즉, ToolMessage 바로 다음이 아닌 경우 등)
+                                pass
+
+                        final_response_chunk = chunk
+
+                # 최종 응답 처리
+                if final_response_chunk and "messages" in final_response_chunk:
+                    final_messages = final_response_chunk["messages"]
+                    last_msg = final_messages[-1]
+                    
+                    if hasattr(last_msg, 'content') and last_msg.content:
+                        print(f"\n\n🤖 Agent:\n{last_msg.content}\n")
+                    
+                    # 대화 기록 업데이트 (전체 히스토리 덮어쓰기)
+                    chat_history = final_messages
+                    
+            except KeyboardInterrupt:
+                print("\n\n⚠️ 인터럽트 감지. 대화를 종료합니다.")
+                break
+            except Exception as e:
+                print(f"\n\n❌ 오류 발생: {e}")
+                import traceback
+                traceback.print_exc()
+                
     except Exception as e:
-        # 기타 모든 예외 처리
-        print(f"\n❌ 예기치 않은 오류 발생: {type(e).__name__}")
-        print(f"오류 메시지: {e}")
-        print("\n💡 일반적인 해결 방법:")
-        print("   1. MCP 서버가 올바르게 설정되었는지 확인")
-        print("   2. 필요한 패키지가 설치되었는지 확인 (langchain-mcp-adapters)")
-        print("   3. Python 버전 호환성 확인")
-        print(f"\n📋 상세 오류 정보:")
-        import traceback
-        traceback.print_exc()  # 전체 스택 트레이스 출력
-        raise
-        
+        print(f"\n❌ 초기화 오류: {e}")
     finally:
-        # ========================================
-        # 리소스 정리: MCP 클라이언트 연결 종료
-        # ========================================
-        # finally 블록은 예외 발생 여부와 관계없이 항상 실행됩니다.
-        # 이를 통해 리소스 누수를 방지합니다.
         if manager:
-            print("\n[정리] MCP 서버 연결 종료 중...")
+            print("\n🔌 연결 종료 중...")
             await manager.disconnect()
-            print("✅ 연결 안전하게 종료됨\n")
-
-
-# =============================================================================
-# 🔄 4. 간단 사용 예시 (단일 서버 연결)
-# =============================================================================
-
-async def simple_mcp_example():
-    """
-    단일 MCP 서버(Context7)만 연결하는 간단한 예제입니다.
-    
-    💡 async with 문법을 사용하면 자동으로 연결 종료가 처리됩니다.
-    """
-    settings = get_settings()
-    
-    # LLM 모델 초기화
-    model = ChatOpenAI(
-        base_url=settings.openai_api_base,
-        api_key=settings.openai_api_key,
-        model=settings.openai_model,
-    )
-    
-    # Context7 MCP 서버만 연결하는 간단한 예제
-    async with MultiServerMCPClient(
-        {
-            "context7": {
-                "command": "npx",
-                "args": ["-y", "@upstash/context7-mcp@latest"],
-                "transport": "stdio",
-            }
-        }
-    ) as client:
-        # MCP 도구 가져오기
-        tools = client.get_tools()
-        print(f"🔧 사용 가능한 도구: {[t.name for t in tools]}")
-        
-        # 에이전트 생성
-        agent = create_react_agent(
-            model,
-            tools=tools,
-            prompt="당신은 라이브러리 문서를 검색하는 전문가입니다."
-        )
-        
-        # 질문 실행
-        result = await agent.ainvoke(
-            {"messages": [HumanMessage(content="LangGraph의 주요 기능을 알려줘")]}
-        )
-        
-        if result.get("messages"):
-            print(f"\n🤖 응답: {result['messages'][-1].content}")
+            print("✅ 연결 종료 완료")
 
 
 # =============================================================================
@@ -436,17 +333,9 @@ async def simple_mcp_example():
 # =============================================================================
 
 if __name__ == "__main__":
-    print("\n" + "="*60)
-    print("🌐 LangGraph MCP Agent Example")
-    print("="*60)
-    
-    # 테스트 질문
-    # Context7 MCP를 사용하여 라이브러리 문서를 검색하는 예제
-    test_query = "LangGraph의 create_react_agent 함수 사용법을 알려줘"
-    
     # 비동기 실행
-    # asyncio.run()으로 async 함수를 실행합니다.
     try:
-        asyncio.run(run_mcp_agent(test_query))
+        # CLI 채팅 모드 실행
+        asyncio.run(run_interactive_mcp_agent())
     except KeyboardInterrupt:
         print("\n👋 종료합니다.")
