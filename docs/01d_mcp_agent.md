@@ -134,19 +134,19 @@ async for chunk in agent.astream(
 
 ```mermaid
 graph LR
-    subgraph Agent["LangGraph Agent"]
+    subgraph Agent [LangGraph Agent]
         A[create_react_agent]
     end
     
-    subgraph Client["MCP Client Manager"]
+    subgraph Client [MCP Client Manager]
         M[Connection Manager]
         R[Retry Logic]
     end
     
-    subgraph MCP["MCP Servers"]
-        B[Context7<br/>(stdio)]
-        C[Analysis LLM<br/>(http)]
-        D[Directory Explorer<br/>(stdio)]
+    subgraph MCP [MCP Servers]
+        B["Context7<br/>(stdio)"]
+        C["Analysis LLM<br/>(http)"]
+        D["Directory Explorer<br/>(stdio)"]
     end
     
     A --> M
