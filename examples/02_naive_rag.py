@@ -172,9 +172,29 @@ def dataloader(manager: VectorStoreManager):
             
             # 문서 로드
             docs = loader.load()
+            
+            # 📊 DirectoryLoader 완료 이후 상세 로그 (디버깅용)
+            print(f"   📊 {ext} 로더 실행 완료 - 로드된 문서 수: {len(docs)}")
+            
             if docs:
+                # 각 문서에 대한 상세 정보 출력
+                for idx, doc in enumerate(docs):
+                    # 문서 메타데이터에서 파일 경로 확인 (source 키가 일반적으로 파일 경로를 담음)
+                    source = doc.metadata.get('source', '알 수 없음')
+                    # 문서 내용의 길이
+                    content_length = len(doc.page_content)
+                    # 문서 내용의 첫 100자 미리보기
+                    preview = doc.page_content[:100].replace('\n', ' ').replace('\r', '')
+                    
+                    print(f"      [{idx+1}] 파일: {source}")
+                    print(f"          - 내용 길이: {content_length}자")
+                    print(f"          - 메타데이터: {doc.metadata}")
+                    print(f"          - 내용 미리보기: {preview}...")
+                
                 all_documents.extend(docs)
-                print(f"   → {ext} 파일 {len(docs)}개 로드 완료")
+                print(f"   ✅ {ext} 파일 {len(docs)}개 로드 완료 및 documents 리스트에 추가됨")
+            else:
+                print(f"   ⚠️ {ext} 패턴에 해당하는 파일이 없거나 로드 실패")
                 
         except Exception as e:
             print(f"   ⚠️ {ext} 로더 경고: {str(e)[:50]}... (필요 라이브러리 확인 요망)")
