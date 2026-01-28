@@ -199,16 +199,159 @@ def get_embeddings(**kwargs) -> Embeddings:
 
 
 def log_llm_error(e: Exception):
-    """LLM 관련 오류 상세 로깅"""
-    import openai
-    import httpx
+    """LLM 관련 오류 상세 로깅
     
+    Args:
+        e: 발생한 예외 객체
+        
+    에러 타입별로 상세한 진단 정보를 제공하여 디버깅을 돕습니다.
+    """
+    import traceback
+    
+    # 동적 임포트 (모듈이 없을 수도 있으므로 try-except로 보호)
+    try:
+        import openai
+    except ImportError:
+        openai = None
+    
+    try:
+        import httpx
+    except ImportError:
+        httpx = None
+    
+    # =========================================================================
+    # 1. 기본 오류 정보 출력
+    # =========================================================================
     error_type = type(e).__name__
-    logger.error(f"❌ LLM 오류 발생! (Type: {error_type})")
+    error_module = type(e).__module__
     
-    if isinstance(e, httpx.ConnectError):
-        logger.error(f"💡 원인: 서버 연결 실패. Local LLM이 켜져 있는지, URL이 올바른지 확인하세요.")
-    elif isinstance(e, openai.APIStatusError):
-        logger.error(f"💡 원인: API 상태 오류 ({e.status_code}). 모델명이나 서버 상태를 확인하세요.")
+    print("\n" + "="*80)
+    print("❌ LLM 오류 발생!")
+    print("="*80)
+    print(f"📌 오류 타입: {error_module}.{error_type}")
+    print(f"📌 오류 메시지: {str(e)}")
+    print("-"*80)
+    
+    # =========================================================================
+    # 2. 오류 타입별 상세 진단
+    # =========================================================================
+    
+    # httpx 연결 오류
+    if httpx and isinstance(e, httpx.ConnectError):
+        print("💡 진단: 서버 연결 실패")
+        print("   원인:")
+        print("   - LLM 서버가 실행되지 않았을 가능성")
+        print("   - 방화벽이나 네트워크 문제")
+        print("   - 잘못된 URL 설정")
+        print("\n   해결 방법:")
+        print("   1. Ollama를 사용 중이라면: 'ollama serve' 명령으로 서버 시작")
+        print("   2. LM Studio를 사용 중이라면: LM Studio 앱에서 서버 시작")
+        print("   3. URL 확인: .env 파일의 OPENAI_API_BASE 설정 확인")
+    
+    # httpx 타임아웃 오류
+    elif httpx and isinstance(e, httpx.TimeoutException):
+        print("💡 진단: 서버 응답 시간 초과")
+        print("   원인:")
+        print("   - 서버가 과부하 상태")
+        print("   - 모델 로딩에 시간이 오래 걸림")
+        print("   - 네트워크 지연")
+        print("\n   해결 방법:")
+        print("   1. 서버 상태 확인")
+        print("   2. 더 가벼운 모델로 변경")
+        print("   3. timeout 설정 증가")
+    
+    # httpx RemoteProtocolError
+    elif httpx and isinstance(e, httpx.RemoteProtocolError):
+        print("💡 진단: 서버 프로토콜 오류 (응답 중단)")
+        print("   원인:")
+        print("   - 서버가 예상치 못하게 연결을 끊음")
+        print("   - 요청 형식이 서버와 맞지 않음")
+        print("   - 서버 내부 오류")
+        print("\n   해결 방법:")
+        print("   1. 서버 로그 확인 (Ollama: 터미널 출력, LM Studio: 앱 로그)")
+        print("   2. 서버 재시작")
+        print("   3. 모델이 정상적으로 로드되었는지 확인")
+        print("      - Ollama: 'ollama list' 명령으로 모델 확인")
+        print("      - LM Studio: 로드된 모델 확인")
+    
+    # OpenAI API 상태 오류
+    elif openai and isinstance(e, openai.APIStatusError):
+        status_code = getattr(e, 'status_code', 'Unknown')
+        print(f"💡 진단: API 상태 오류 (HTTP {status_code})")
+        print("   원인:")
+        if status_code == 404:
+            print("   - 모델을 찾을 수 없음 (모델명이 잘못되었을 가능성)")
+        elif status_code == 401:
+            print("   - 인증 실패 (API 키가 잘못되었을 가능성)")
+        elif status_code == 500:
+            print("   - 서버 내부 오류")
+        else:
+            print(f"   - HTTP {status_code} 오류")
+        print("\n   해결 방법:")
+        print("   1. .env 파일의 OPENAI_MODEL 설정 확인")
+        print("   2. 서버에서 사용 가능한 모델 목록 확인")
+    
+    # OpenAI API 연결 오류
+    elif openai and isinstance(e, openai.APIConnectionError):
+        print("💡 진단: API 연결 오류")
+        print("   원인:")
+        print("   - API 서버에 연결할 수 없음")
+        print("   - 네트워크 문제")
+        print("\n   해결 방법:")
+        print("   1. 인터넷 연결 확인")
+        print("   2. 프록시 설정 확인")
+        print("   3. 방화벽 설정 확인")
+    
+    # 기타 오류
     else:
-        logger.error(f"⚠️ 상세: {str(e)}")
+        print("💡 진단: 알 수 없는 오류 타입")
+        print(f"   오류 객체 타입: {type(e)}")
+        print(f"   상세 메시지: {str(e)}")
+    
+    # =========================================================================
+    # 3. 환경 변수 설정 상태 출력
+    # =========================================================================
+    print("\n" + "-"*80)
+    print("🔍 현재 환경 변수 설정:")
+    print("-"*80)
+    
+    env_vars = {
+        "OPENAI_API_BASE": os.getenv("OPENAI_API_BASE"),
+        "OPENAI_API_KEY": "****" + (os.getenv("OPENAI_API_KEY", "")[-4:] if os.getenv("OPENAI_API_KEY") else "없음"),
+        "OPENAI_MODEL": os.getenv("OPENAI_MODEL"),
+        "EMBEDDING_PROVIDER": os.getenv("EMBEDDING_PROVIDER"),
+        "OLLAMA_EMBEDDING_MODEL": os.getenv("OLLAMA_EMBEDDING_MODEL"),
+    }
+    
+    for key, value in env_vars.items():
+        print(f"   {key}: {value or '(설정되지 않음)'}")
+    
+    # =========================================================================
+    # 4. 스택 트레이스 출력
+    # =========================================================================
+    print("\n" + "-"*80)
+    print("📋 전체 스택 트레이스:")
+    print("-"*80)
+    traceback.print_exc()
+    
+    # =========================================================================
+    # 5. 연결 테스트 방법 안내
+    # =========================================================================
+    print("\n" + "-"*80)
+    print("🔧 연결 테스트 방법:")
+    print("-"*80)
+    api_base = os.getenv("OPENAI_API_BASE", "http://localhost:11434")
+    
+    if "11434" in api_base:
+        print("   Ollama 서버 테스트:")
+        print(f"   curl {api_base.replace('/v1', '')}")
+        print("   (정상이면 'Ollama is running' 메시지 표시)")
+    elif "1234" in api_base:
+        print("   LM Studio 서버 테스트:")
+        print(f"   curl {api_base}/models")
+        print("   (정상이면 사용 가능한 모델 목록 JSON 반환)")
+    else:
+        print(f"   API 서버 테스트:")
+        print(f"   curl {api_base}")
+    
+    print("="*80 + "\n")
