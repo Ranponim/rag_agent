@@ -195,9 +195,28 @@ class VectorStoreManager:
             ...     metadatas=[{"source": "doc1"}, {"source": "doc2"}]
             ... )
         """
+        # 임베딩 요청 직전 상세 로그 (디버깅용)
+        print(f"\n📤 임베딩 모델로 요청 준비 중...")
+        print(f"   - 요청할 텍스트 수: {len(texts)}개")
+        print(f"   - 임베딩 모델 타입: {type(self.embeddings).__name__}")
+        print(f"   - 임베딩 모델 정보: {self.embeddings}")
+        
+        # 첫 번째 텍스트의 미리보기 (디버깅용)
+        if texts:
+            preview = texts[0][:100].replace('\n', ' ')
+            print(f"   - 첫 번째 텍스트 미리보기: {preview}...")
+        
         logger.info(f"{len(texts)}개의 텍스트를 Vector Store에 추가 중...")
         
-        ids = self.vector_store.add_texts(texts=texts, metadatas=metadatas)
+        try:
+            print("   ⏳ 임베딩 모델로 벡터화 요청 중... (서버 응답 대기)")
+            ids = self.vector_store.add_texts(texts=texts, metadatas=metadatas)
+            print(f"   ✅ 임베딩 완료! {len(ids)}개의 벡터가 생성되었습니다.")
+        except Exception as e:
+            print(f"\n❌ 임베딩 중 오류 발생!")
+            print(f"   오류 타입: {type(e).__name__}")
+            print(f"   오류 메시지: {str(e)}")
+            raise  # 오류를 다시 던져서 상위에서 처리하도록 함
         
         logger.info(f"{len(ids)}개의 텍스트가 추가되었습니다.")
         return ids
@@ -220,9 +239,22 @@ class VectorStoreManager:
         if split:
             documents = self.split_documents(documents)
         
+        # 임베딩 요청 직전 상세 로그 (디버깅용)
+        print(f"\n📤 임베딩 모델로 문서 벡터화 요청 준비 중...")
+        print(f"   - 요청할 문서 수: {len(documents)}개")
+        print(f"   - 임베딩 모델 타입: {type(self.embeddings).__name__}")
+        
         logger.info(f"{len(documents)}개의 문서를 Vector Store에 추가 중...")
         
-        ids = self.vector_store.add_documents(documents=documents)
+        try:
+            print("   ⏳ 임베딩 모델로 벡터화 요청 중... (서버 응답 대기)")
+            ids = self.vector_store.add_documents(documents=documents)
+            print(f"   ✅ 임베딩 완료! {len(ids)}개의 벡터가 생성되었습니다.")
+        except Exception as e:
+            print(f"\n❌ 문서 임베딩 중 오류 발생!")
+            print(f"   오류 타입: {type(e).__name__}")
+            print(f"   오류 메시지: {str(e)}")
+            raise  # 오류를 다시 던져서 상위에서 처리하도록 함
         
         logger.info(f"{len(ids)}개의 문서가 추가되었습니다.")
         return ids
