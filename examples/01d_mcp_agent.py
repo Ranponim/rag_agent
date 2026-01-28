@@ -150,10 +150,15 @@ async def create_mcp_agent(server_configs: dict):
        반환된 manager는 반드시 disconnect()를 호출하여 정리해야 합니다.
     """
     # LLM 모델 초기화
+    # 환경변수에서 값을 가져와 변수에 할당 (print문에서 사용하기 위함)
+    api_base = os.getenv("OPENAI_API_BASE")
+    api_key = os.getenv("OPENAI_API_KEY")
+    model_name = os.getenv("OPENAI_MODEL")
+    
     model = ChatOpenAI(
-        base_url=os.getenv("OPENAI_API_BASE"),
-        api_key=os.getenv("OPENAI_API_KEY"),
-        model=os.getenv("OPENAI_MODEL")
+        base_url=api_base,
+        api_key=api_key,
+        model=model_name
     )
     
     print(f"\n{'='*70}")
