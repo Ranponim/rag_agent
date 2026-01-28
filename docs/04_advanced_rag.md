@@ -67,30 +67,35 @@ class AdvancedRAGState(TypedDict):
 ```
 
 ### 2. 조건부 엣지 (Router)
-`grade_documents` 노드 실행 후, `check_relevance` 함수가 다음 경로를 결정합니다.
+`grade_documents_node` 노드 실행 후, `check_relevance` 함수가 다음 경로를 결정합니다.
 
 ```python
 def check_relevance(state):
+    """문서 관련성 평가 결과에 따른 다음 노드 결정"""
     if state["grade"] == "relevant":
         return "generate"
-    elif state["loop_count"] > 1: # 최대 재시도 초과 시 종료
+    elif state["loop_count"] >= 3: # 최대 재시도(3회) 초과 시 종료
         return "end"
     else:
-        return "rewrite_query"
+        return "rewrite"
 
 # 조건부 엣지 등록
 builder.add_conditional_edges(
-    "grade_documents",
+    "grade_documents_node",
     check_relevance,
-    {"generate": "generate", "rewrite_query": "rewrite_query", "end": END}
+    {
+        "generate": "generate_node", 
+        "rewrite": "rewrite_query_node", 
+        "end": END
+    }
 )
 ```
 
 ### 3. 루프 구현 (Cyclic Edge)
-질문 재작성 노드(`rewrite_query`)에서 다시 검색 노드(`retrieve`)로 엣지를 연결하여 사이클을 만듭니다.
+질문 재작성 노드(`rewrite_query_node`)에서 다시 검색 노드(`retrieve_node`)로 엣지를 연결하여 사이클을 만듭니다.
 
 ```python
-builder.add_edge("rewrite_query", "retrieve")
+builder.add_edge("rewrite_query_node", "retrieve_node")
 ```
 
 ---

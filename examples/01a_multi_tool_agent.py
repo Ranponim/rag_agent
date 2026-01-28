@@ -20,14 +20,19 @@ Agent를 구현합니다.
 # =============================================================================
 
 import sys                              # 파이썬 시스템 환경을 제어하는 모듈입니다.
+import os                               # 환경변수 접근을 위한 모듈입니다.
 from pathlib import Path                # 컴퓨터의 파일 경로를 다루기 쉽게 해주는 모듈입니다.
 from typing import Literal              # 특정 텍스트 값만 허용하도록 타입을 정의할 때 씁니다.
 
 # 현재 실행 중인 파일의 부모 디렉토리(루트 폴더)를 파이썬 경로에 추가합니다.
-# 이렇게 해야 다른 폴더에 있는 config나 utils 모듈을 불러올 수 있습니다.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
+
 # LangChain에서 대화 메시지(사람, 시스템 메시지) 형식을 가져옵니다.
+from langchain_openai import ChatOpenAI # LLM 모델 클래스
 from langchain_core.messages import HumanMessage, SystemMessage
 # 파이썬 함수를 AI가 쓸 수 있는 '도구'로 변환해주는 장식자(@tool)를 가져옵니다.
 from langchain_core.tools import tool
@@ -37,9 +42,8 @@ from langgraph.graph import StateGraph, MessagesState, START, END
 # 도구를 실행하는 노드와, 도구 사용 여부를 결정하는 조건 함수를 가져옵니다.
 from langgraph.prebuilt import ToolNode, tools_condition
 
-# 프로젝트 내부 설정과 LLM 생성 도우미를 가져옵니다.
-from config.settings import get_settings
-from utils.llm_factory import get_llm, log_llm_error
+# 프로젝트 내부 LLM 생성 도우미를 가져옵니다.
+from utils.llm_factory import log_llm_error
 
 
 # =============================================================================
@@ -150,11 +154,15 @@ tools = [get_weather, calculate, search_knowledge, get_time, translate]
 
 def agent_node(state: MessagesState) -> dict:
     """질문을 받고 무엇을 할지 결정하는 '생각' 노드입니다."""
-    # 1. 사용할 AI 모델을 가져옵니다.
-    llm = get_llm()
+    # 1. 사용할 AI 모델을 초기화합니다.
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     # 2. AI에게 우리가 만든 도구 목록(tools)을 연결해줍니다.
     # 한번에 여러 도구를 부르지 않도록(parallel_tool_calls=False) 설정합니다.
-    llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
+    model_with_tools = model.bind_tools(tools, parallel_tool_calls=False)
     
     # 3. AI의 정체성(페르소나)을 설정하는 기본 지침을 만듭니다.
     system_message = SystemMessage(content="""당신은 다재다능한 비서입니다.
@@ -167,7 +175,7 @@ def agent_node(state: MessagesState) -> dict:
     messages = [system_message] + state["messages"]
     
     # 5. AI에게 메시지를 보내고 답변을 받습니다.
-    response = llm_with_tools.invoke(messages)
+    response = model_with_tools.invoke(messages)
     
     # 만약 AI가 도구를 쓰기로 했다면, 무엇을 하려는지 콘솔(검은 창)에 보여줍니다.
     if response.tool_calls:
@@ -183,7 +191,7 @@ def agent_node(state: MessagesState) -> dict:
 # "시작하면 AI에게 가고, 도구가 필요하면 도구 노드로 가라"는 길을 만듭니다.
 # =============================================================================
 
-def create_multi_tool_agent():
+def create_graph():
     """에이전트의 작동 순서도를 만들고 컴파일(실행 준비)합니다."""
     # 흐름도를 그릴 수 있는 캔버스(StateGraph)를 준비합니다. 대화 상태를 공유합니다.
     builder = StateGraph(MessagesState)
@@ -216,16 +224,16 @@ def create_multi_tool_agent():
 # ▶️ 4. 답변 실행 및 화면 출력 함수
 # =============================================================================
 
-def run_agent_interactive(query: str, graph):
+def run_agent_interactive(query: str, app):
     """사용자 질문을 입력받아 AI의 최종 답변을 보여줍니다."""
     print(f"\n{'='*60}")
     print(f"🙋 질문: {query}")
     print(f"{'='*60}")
     
     try:
-        # 우리가 만든 흐름도(graph)를 실행(invoke)합니다.
+        # 우리가 만든 흐름도(app)를 실행(invoke)합니다.
         # 사람의 질문(HumanMessage)을 담아서 시작합니다.
-        result = graph.invoke({"messages": [HumanMessage(content=query)]})
+        result = app.invoke({"messages": [HumanMessage(content=query)]})
         
         # 전체 대화 기록 중 가장 마지막 메시지가 AI의 최종 답변입니다.
         final_answer = result["messages"][-1].content
@@ -250,7 +258,7 @@ if __name__ == "__main__":
     print("끝내고 싶으면 'q' 또는 'exit'라고 입력하세요.\n")
     
     # 1. 전체 흐름도를 한 번 미리 만들어 둡니다.
-    agent_graph = create_multi_tool_agent()
+    app = create_graph()
     
     # 2. 무한 반복하며 질문을 받습니다.
     while True:
@@ -267,7 +275,7 @@ if __name__ == "__main__":
                 break
                 
             # 입력받은 질문으로 에이전트를 실행합니다.
-            run_agent_interactive(user_input, agent_graph)
+            run_agent_interactive(user_input, app)
             
         except KeyboardInterrupt:
             # Ctrl+C를 눌렀을 때의 처리입니다.

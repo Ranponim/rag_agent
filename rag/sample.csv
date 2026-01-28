@@ -1,0 +1,4 @@
+topic,content
+LangChain,LLM 애플리케이션 개발을 위한 프레임워크입니다.
+Vector DB,고차원 벡터 데이터를 저장하고 검색하는 데이터베이스입니다.
+Embedding,텍스트의 의미를 숫자로 변환하는 기술입니다.

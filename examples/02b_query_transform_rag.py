@@ -20,13 +20,19 @@
 # =============================================================================
 
 import sys                              # 시스템 환경 제어
+import os                               # 환경변수 접근용
 from pathlib import Path                # 파일 경로 처리
 from typing import TypedDict, List      # 데이터 형식 정의
 
 # 프로젝트 최상단 폴더를 경로에 추가하여 config, utils 등을 불러옵니다.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
+
 # LangChain의 문서 형식과 지시서(프롬프트) 도구
+from langchain_openai import ChatOpenAI # LLM 모델 클래스
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -34,8 +40,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, START, END
 
 # 프로젝트 전용 유틸리티들
-from config.settings import get_settings
-from utils.llm_factory import get_llm, get_embeddings, log_llm_error
+from utils.llm_factory import get_embeddings, log_llm_error
 from utils.vector_store import VectorStoreManager
 
 
@@ -56,25 +61,53 @@ class QueryTransformState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. 지식 창고(Vector Store) 초기화
+# 🗄️ 2. 지식 창고(Vector Store) 및 데이터 로더(DataLoader)
 # =============================================================================
 
+from langchain_community.document_loaders import DirectoryLoader, TextLoader, CSVLoader
+
+def dataloader(manager: VectorStoreManager):
+    """./rag 폴더에서 파일을 읽어와 지식 창고에 적재합니다."""
+    print("\n📥 [데이터 로더] ./rag 폴더의 파일들을 검색 데이터로 적재 중...")
+    
+    documents = []
+    # 파일 확장자별 로더 설정 (Windows 안정성을 위해 use_multithreading=False 권장)
+    for ext, loader_cls in {".txt": TextLoader, ".md": TextLoader, ".csv": CSVLoader}.items():
+        try:
+            loader = DirectoryLoader(
+                path="./rag", 
+                glob=f"**/*{ext}", 
+                loader_cls=loader_cls, 
+                loader_kwargs={"encoding": "utf-8"}, 
+                use_multithreading=False,
+                silent_errors=True
+            )
+            documents.extend(loader.load())
+        except: pass
+
+    if documents:
+        manager.add_documents(documents)
+        print(f"✅ {len(documents)}개의 파일 기반 지식이 적재되었습니다.")
+    else:
+        # 파일이 없을 경우 기본 지식 활용
+        samples = [
+            "LangGraph는 AI 에이전트의 복잡한 흐름을 제어하는 프레임워크입니다.",
+            "HyDE는 질문에 대한 가상 답변을 먼저 만들고 검색하는 검색 도우미 기술입니다.",
+            "Multi-Query는 하나의 질문을 여러 갈래로 넓혀서 검색 범위를 확장합니다.",
+            "임베딩은 문장을 고차원 숫자로 바꿔서 의미적 유사도를 측정하게 해줍니다.",
+        ]
+        manager.add_texts(texts=samples)
+        print(f"✅ 기본 데이터 {len(samples)}개가 적재되었습니다. (./rag 폴더 비어있음)")
+
 def get_qt_vs() -> VectorStoreManager:
-    """검색 변환 전용 지식 창고를 생성하고 기초 지식을 넣습니다."""
+    """검색 변환 전용 지식 창고를 생성하고 DataLoader를 실행합니다."""
     embeddings = get_embeddings() # 글자를 숫자로 바꾸는 엔진
     # 'query_transform_rag'라는 이름의 전용 창고를 마련합니다.
     manager = VectorStoreManager(embeddings=embeddings, collection_name="query_transform_rag")
 
-    # 검색 연습을 위한 풍부한 지식들입니다.
-    samples = [
-        "LangGraph는 AI 에이전트의 복잡한 흐름을 제어하는 프레임워크입니다.",
-        "RAG는 검색 증강 생성의 약자로, 외부 정보를 가져와 AI 답변을 보강합니다.",
-        "HyDE는 질문에 대한 가상 답변을 먼저 만들고 검색하는 검색 도우미 기술입니다.",
-        "Multi-Query는 하나의 질문을 여러 갈래로 넓혀서 검색 범위를 확장합니다.",
-        "임베딩은 문장을 고차원 숫자로 바꿔서 의미적 유사도를 측정하게 해줍니다.",
-    ]
-    # 지식 항아리에 지식들을 담습니다.
-    manager.add_texts(texts=samples)
+    # 데이터 로더를 호출하여 지식을 채웁니다.
+    dataloader(manager)
+    
     return manager
 
 
@@ -86,7 +119,12 @@ def generate_hyde_document(state: QueryTransformState) -> dict:
     """[경로 A-1] HyDE 가상 문서 만들기: '답변은 이럴 거야'라고 상상하기"""
     print(f"\n🔮 [HyDE] 질문에 대한 '가상의 정답'을 상상해서 써보는 중...")
     
-    llm = get_llm()
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     # AI에게 가짜 답변을 아주 유식하게 써달라고 부탁합니다.
     prompt = ChatPromptTemplate.from_messages([
         ("system", "당신은 지식 백과사전 편집자입니다. 질문에 대해 아주 상세하고 전문적인 '가상 답변'을 한 문단으로 작성하세요."),
@@ -94,7 +132,7 @@ def generate_hyde_document(state: QueryTransformState) -> dict:
     ])
     
     # AI가 상상한 답변을 생성합니다.
-    response = (prompt | llm).invoke({"question": state["original_question"]})
+    response = (prompt | model).invoke({"question": state["original_question"]})
     print(f"   → 가상 답변 상상 완료! 이를 바탕으로 검색을 시작합니다.")
     
     # 생성된 가상 답변을 'hyde_document' 칸에 적습니다.
@@ -105,14 +143,19 @@ def generate_multi_queries(state: QueryTransformState) -> dict:
     """[경로 B-1] Multi-Query 만들기: 질문을 여러 방식으로 다시 쓰기"""
     print(f"\n🔄 [Multi-Query] 질문을 3가지 다른 표현으로 변형하는 중...")
     
-    llm = get_llm()
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     # 질문의 의미는 같지만 단어 구성을 다르게 하여 검색 그물을 넓힙니다.
     prompt = ChatPromptTemplate.from_messages([
         ("system", "원본 질문을 바탕으로 검색에 도움이 될만한 변형 질문 3개를 만드세요. 한 줄에 하나씩만 쓰세요."),
         ("human", "원본 질문: {question}"),
     ])
     
-    response = (prompt | llm).invoke({"question": state["original_question"]})
+    response = (prompt | model).invoke({"question": state["original_question"]})
     
     # AI의 답변을 줄 단위로 쪼개 리스트로 만듭니다.
     queries = [q.strip() for q in response.content.split("\n") if q.strip()]
@@ -182,14 +225,19 @@ def generate_answer(state: QueryTransformState) -> dict:
     """[마지막: 답변 쓰기] 풍부하게 모은 지식으로 완벽한 답장 쓰기"""
     print("📝 [최종 답변] 정교하게 수집된 정보들을 바탕으로 답변을 작성합니다...")
     
-    llm = get_llm()
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     prompt = ChatPromptTemplate.from_messages([
         ("system", "당신은 도서관 사서처럼 정확한 정보만을 알려주는 AI 가이드입니다."),
         ("human", "참조한 지식들:\n{context}\n\n사용자 질문: {question}"),
     ])
     
     # 모든 정보를 종합하여 답변을 생성합니다.
-    response = (prompt | llm).invoke({
+    response = (prompt | model).invoke({
         "context": state["context"],
         "question": state["original_question"]
     })
@@ -202,7 +250,7 @@ def generate_answer(state: QueryTransformState) -> dict:
 # 🔗 4. 전체적인 업무 흐름도(Graph) 조립하기
 # =============================================================================
 
-def create_query_transform_graph():
+def create_graph():
     """병렬(동시) 검색이 가능한 고급 RAG 순서도를 만듭니다."""
     # 우리가 만든 메모장(QueryTransformState)을 사용하는 도면을 펼칩니다.
     builder = StateGraph(QueryTransformState)
@@ -236,7 +284,7 @@ def create_query_transform_graph():
 # ▶️ 5. 실제로 돌려보기 (CLI 실행부)
 # =============================================================================
 
-def run_qt_rag(query: str, graph):
+def run_qt_rag(query: str, app):
     """질문을 입력하면 작동 과정을 보여주며 답변합니다."""
     print(f"\n{'='*60}")
     print(f"🙋 질문: {query}")
@@ -244,7 +292,7 @@ def run_qt_rag(query: str, graph):
     
     try:
         # 가동 준비(입력값 세팅)
-        result = graph.invoke({
+        result = app.invoke({
             "original_question": query,
             "hyde_document": "",
             "multi_queries": [],
@@ -269,7 +317,7 @@ if __name__ == "__main__":
     print("- 종료하려면 'q' 혹은 'exit'를 입력하세요.\n")
     
     # 1. 흐름도 기계를 한 번 만들어 둡니다.
-    qt_graph = create_query_transform_graph()
+    app = create_graph()
     
     # 2. 반복해서 질문을 받습니다.
     while True:
@@ -283,7 +331,7 @@ if __name__ == "__main__":
                 break
                 
             # 실행!
-            run_qt_rag(line, qt_graph)
+            run_qt_rag(line, app)
             
         except KeyboardInterrupt:
             print("\n👋 급히 프로그램을 종료합니다.")

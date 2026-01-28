@@ -76,13 +76,14 @@ graph TD
 
 ### HyDE (가상 답변 상상하여 검색하기)
 ```python
-def generate_hyde_document(state: QueryTransformState) -> dict:
+def retrieve_hyde_node(state: QueryTransformState) -> dict:
     """[단계 1] '답변은 이럴 거야'라고 AI가 상상해서 답변 지문 만들기"""
     # AI에게 가짜 답변을 상세히 써달라고 부탁합니다.
-    response = llm.invoke(...) 
+    hyde_prompt = "..."
+    response = llm.invoke(hyde_prompt) 
     return {"hyde_document": response.content}
 
-def search_with_hyde(state: QueryTransformState) -> dict:
+def search_hyde_node(state: QueryTransformState) -> dict:
     """[단계 2] 상상한 답변(HyDE)과 가장 비슷한 진짜 문서 찾기"""
     # AI가 상상한 가짜 답변을 검색어로 써서 실제 지식 창고를 뒤집니다.
     docs = vs.search(query=state["hyde_document"], k=3)
@@ -91,19 +92,21 @@ def search_with_hyde(state: QueryTransformState) -> dict:
 
 ### Multi-Query (질문을 다각도로 변형해서 검색하기)
 ```python
-def generate_multi_queries(state: QueryTransformState) -> dict:
+def generate_queries_node(state: QueryTransformState) -> dict:
     """[단계 1] 질문을 3가지 다른 표현으로 변형하기"""
     # 의미는 같지만 단어 구성을 다르게 하여 3개의 질문 리스트를 만듭니다.
-    response = llm.invoke(...)
-    return {"multi_queries": [original] + new_queries}
+    response = llm.invoke(multi_query_prompt)
+    # 파싱 로직...
+    return {"multi_queries": queries}
 
-def search_with_multi_queries(state: QueryTransformState) -> dict:
+def search_multi_node(state: QueryTransformState) -> dict:
     """[단계 2] 여러 개의 질문으로 넓게 뒤지기"""
     # 각 질문마다 돌아가며 검색하고 중복을 제거하여 모읍니다.
+    all_docs = []
     for q in state["multi_queries"]:
         docs = vs.search(query=q, k=2)
         all_docs.extend(docs)
-    return {"multi_query_results": deduplicate(all_docs)}
+    return {"multi_query_results": all_docs}
 ```
 
 ---

@@ -40,6 +40,7 @@ Self-RAG의 개념을 도입하여, 검색된 문서의 관련성을 평가하�
 
 # Python 표준 라이브러리
 import sys                              # 시스템 경로 조작용
+import os                               # 환경변수 접근용
 from pathlib import Path                # 파일 경로 처리
 from typing import TypedDict, List, Literal  
 # Literal: 특정 값만 허용하는 타입 (예: Literal["yes", "no"])
@@ -47,10 +48,15 @@ from typing import TypedDict, List, Literal
 # 프로젝트 루트를 Python 경로에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
+
 # -----------------------------------------------------------------------------
 # 🔗 LangChain 핵심 모듈 임포트
 # -----------------------------------------------------------------------------
 
+from langchain_openai import ChatOpenAI # LLM 모델 클래스
 from langchain_core.documents import Document
 # Document: 검색된 문서 객체
 
@@ -72,8 +78,7 @@ from langgraph.graph import StateGraph, START, END
 # 🔗 프로젝트 내부 유틸리티 임포트
 # -----------------------------------------------------------------------------
 
-from config.settings import get_settings
-from utils.llm_factory import get_llm, get_embeddings, log_llm_error
+from utils.llm_factory import get_embeddings, log_llm_error
 from utils.vector_store import VectorStoreManager
 
 
@@ -107,24 +112,50 @@ class AdvancedRAGState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. Vector Store 준비
+# 🗄️ 2. Vector Store 및 데이터 로더(DataLoader)
 # =============================================================================
+
+from langchain_community.document_loaders import DirectoryLoader, TextLoader, CSVLoader
+
+def dataloader(manager: VectorStoreManager):
+    """고급 RAG 테스트를 위해 ./rag 폴더의 데이터를 적재합니다."""
+    print("\n📥 [데이터 로더] ./rag 폴더에서 고급 RAG용 지식 적재 중...")
+    
+    documents = []
+    # 파일 확장자별 로더 설정 (Windows 안정성을 위해 use_multithreading=False 권장)
+    for ext, loader_cls in {".txt": TextLoader, ".md": TextLoader, ".csv": CSVLoader}.items():
+        try:
+            loader = DirectoryLoader(
+                path="./rag", 
+                glob=f"**/*{ext}", 
+                loader_cls=loader_cls, 
+                loader_kwargs={"encoding": "utf-8"}, 
+                use_multithreading=False,
+                silent_errors=True
+            )
+            documents.extend(loader.load())
+        except: pass
+
+    if documents:
+        manager.add_documents(documents)
+        print(f"✅ {len(documents)}개의 파일 데이터가 고급 RAG 저장소에 적재되었습니다.")
+    else:
+        texts = [
+            "Self-RAG는 LLM이 스스로 검색 필요성을 판단하고 생성된 답변을 비평(Critique)하는 프레임워크입니다.",
+            "Hallucination(환각)은 LLM이 사실이 아닌 정보를 그럴듯하게 생성하는 현상입니다.",
+        ]
+        manager.add_texts(texts)
+        print(f"✅ 기본 고급 RAG 지식 {len(texts)}개가 적재되었습니다.")
 
 def get_vector_store() -> VectorStoreManager:
     """
-    Vector Store 초기화 및 샘플 데이터 로드
+    Vector Store 초기화 및 DataLoader 실행
     """
     embeddings = get_embeddings()
     manager = VectorStoreManager(embeddings=embeddings, collection_name="advanced_rag")
 
-    if True:  # 예제 단순화를 위해 항상 실행
-        texts = [
-            "Self-RAG는 LLM이 스스로 검색 필요성을 판단하고 생성된 답변을 비평(Critique)하는 프레임워크입니다.",
-            "Corrective RAG(CRAG)는 검색된 문서가 질문과 관련이 없는 경우 웹 검색 등을 통해 지식을 수정/보완합니다.",
-            "LangGraph는 순환(Cycle)이 있는 그래프를 통해 에이전트의 자기 수정(Self-Correction) 패턴을 지원합니다.",
-            "Hallucination(환각)은 LLM이 사실이 아닌 정보를 그럴듯하게 생성하는 현상입니다.",
-        ]
-        manager.add_texts(texts)
+    # 데이터 로더를 호출하여 데이터를 채웁니다.
+    dataloader(manager)
 
     return manager
 
@@ -165,7 +196,12 @@ def grade_documents(state: AdvancedRAGState):
     """
     print("📊 문서 평가 중...")
     
-    llm = get_llm()
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     
     # 평가용 프롬프트
     prompt = ChatPromptTemplate.from_template(
@@ -177,7 +213,7 @@ def grade_documents(state: AdvancedRAGState):
         """
     )
     
-    chain = prompt | llm
+    chain = prompt | model
     
     # 각 문서를 평가하여 하나라도 관련 있으면 relevant
     is_relevant = False
@@ -212,8 +248,13 @@ def generate(state: AdvancedRAGState):
     # 컨텍스트 구성
     context = "\n".join(d.page_content for d in state["documents"])
     
-    llm = get_llm()
-    res = llm.invoke(f"컨텍스트: {context}\n\n질문: {state['question']}\n답변:")
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
+    res = model.invoke(f"컨텍스트: {context}\n\n질문: {state['question']}\n답변:")
     
     return {"answer": res.content}
 
@@ -286,7 +327,7 @@ def check_relevance(state: AdvancedRAGState) -> Literal["generate", "rewrite_que
 # 🔀 5. 그래프 구성
 # =============================================================================
 
-def create_advanced_rag_graph():
+def create_graph():
     """
     Advanced RAG 그래프 생성
     
@@ -359,7 +400,7 @@ def run_advanced_rag(question: str):
     """
     Advanced RAG 파이프라인을 실행하여 질문에 답변합니다.
     """
-    graph = create_advanced_rag_graph()
+    app = create_graph()
     
     print(f"\n{'='*60}")
     print(f"🙋 질문: {question}")
@@ -367,7 +408,7 @@ def run_advanced_rag(question: str):
     
     try:
         # 초기 상태: 질문과 loop_count 설정
-        result = graph.invoke({
+        result = app.invoke({
             "question": question, 
             "loop_count": 0
         })

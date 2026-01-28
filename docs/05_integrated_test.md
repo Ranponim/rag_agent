@@ -83,16 +83,13 @@ graph TD
 
 ### Router 노드
 ```python
-def router_node(state):
+def router_node(state: IntegratedState):
+    """질문의 의도를 분석하여 chat, search, tool 중 하나로 라우팅합니다."""
     query = state["messages"][-1].content
     
-    prompt = """쿼리를 분석하여 처리 방식 결정:
-    - chat: 인사, 잡담
-    - search: 정보 검색
-    - tool: 계산, 시간 조회"""
-    
-    query_type = llm.invoke({"query": query})
-    return {"query_type": query_type}
+    # LLM을 사용하여 의도 파악...
+    response = router_chain.invoke({"query": query})
+    return {"query_type": response.query_type}
 ```
 
 ### 메모리 활성화

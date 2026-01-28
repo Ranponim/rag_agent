@@ -35,16 +35,22 @@ LangGraph의 병렬 실행(Parallel Execution) 기능을 활용하여,
 
 # Python 표준 라이브러리
 import sys                              # 시스템 경로 조작용
+import os                               # 환경변수 접근용
 from pathlib import Path                # 파일 경로를 객체지향적으로 다루는 라이브러리
 from typing import TypedDict, List      # 타입 힌트용
 
 # 프로젝트 루트를 Python 경로에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
+
 # -----------------------------------------------------------------------------
 # 🔗 LangChain 핵심 모듈 임포트
 # -----------------------------------------------------------------------------
 
+from langchain_openai import ChatOpenAI # LLM 모델 클래스
 from langchain_core.documents import Document
 # Document: 검색된 텍스트를 담는 표준 객체
 
@@ -67,10 +73,7 @@ from langgraph.graph import StateGraph, START, END
 # 🔗 프로젝트 내부 유틸리티 임포트
 # -----------------------------------------------------------------------------
 
-from config.settings import get_settings
-# 환경 설정 로드
-
-from utils.llm_factory import get_llm, get_embeddings, log_llm_error
+from utils.llm_factory import get_embeddings, log_llm_error
 # LLM 및 임베딩 모델 생성
 
 from utils.vector_store import VectorStoreManager
@@ -109,22 +112,40 @@ class EntityRAGState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. Vector Store 준비 (메타데이터 포함)
+# 🗄️ 2. Vector Store 및 데이터 로더(DataLoader)
 # =============================================================================
 
-def get_vector_store() -> VectorStoreManager:
-    """
-    Vector Store 초기화 및 메타데이터 포함 데이터 로드
-    
-    💡 메타데이터(metadata)란?
-       문서의 부가 정보 (태그, 카테고리, 작성자 등)
-       엔티티 기반 검색에서 필터링에 활용 가능
-    """
-    embeddings = get_embeddings()
-    manager = VectorStoreManager(embeddings=embeddings, collection_name="entity_rag")
+from langchain_community.document_loaders import DirectoryLoader, TextLoader, CSVLoader
 
-    if True:  # 예제 단순화를 위해 항상 실행
-        # (텍스트, 메타데이터) 쌍으로 데이터 구성
+def dataloader(manager: VectorStoreManager):
+    """./rag 폴더의 파일을 읽어와 엔티티 기반 지식으로 적재합니다."""
+    print("\n📥 [데이터 로더] ./rag 폴더에서 파일을 읽어오는 중...")
+    
+    documents = []
+    # 파일 확장자별 로더 설정 (Windows 안정성을 위해 use_multithreading=False 권장)
+    for ext, loader_cls in {".txt": TextLoader, ".md": TextLoader, ".csv": CSVLoader}.items():
+        try:
+            loader = DirectoryLoader(
+                path="./rag", 
+                glob=f"**/*{ext}", 
+                loader_cls=loader_cls, 
+                loader_kwargs={"encoding": "utf-8"}, 
+                use_multithreading=False,
+                silent_errors=True
+            )
+            documents.extend(loader.load())
+        except: pass
+
+    if documents:
+        # 파일에서 읽은 문서들에 기본 태그(Metadata)를 추가합니다.
+        for doc in documents:
+            if not doc.metadata: doc.metadata = {}
+            doc.metadata["tags"] = "FileLoaded"
+        
+        manager.add_documents(documents)
+        print(f"✅ {len(documents)}개의 파일 데이터가 적재되었습니다. (Metadata: tags=FileLoaded)")
+    else:
+        # 파일이 없는 경우 기존 엔티티 예제 데이터 사용
         data = [
             ("LangGraph는 순환 그래프 구조를 지원합니다.", {"tags": "LangGraph"}),
             ("LangChain은 LLM 애플리케이션 프레임워크입니다.", {"tags": "LangChain"}),
@@ -136,6 +157,15 @@ def get_vector_store() -> VectorStoreManager:
             [d[0] for d in data],           # 텍스트 리스트
             metadatas=[d[1] for d in data]  # 메타데이터 리스트
         )
+        print(f"✅ 기본 엔티티 데이터 {len(data)}개가 적재되었습니다.")
+
+def get_vector_store() -> VectorStoreManager:
+    """Vector Store 초기화 및 DataLoader 실행"""
+    embeddings = get_embeddings()
+    manager = VectorStoreManager(embeddings=embeddings, collection_name="entity_rag")
+
+    # 데이터 로더를 호출하여 데이터를 채웁니다.
+    dataloader(manager)
 
     return manager
 
@@ -161,7 +191,12 @@ def extract_entities(state: EntityRAGState):
     """
     print(f"\n🏷️ 엔티티 추출 중: {state['question']}")
     
-    llm = get_llm()
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     
     # JSON 출력을 유도하는 프롬프트
     # {{}}는 중괄호 리터럴 (f-string과 구분)
@@ -173,7 +208,7 @@ def extract_entities(state: EntityRAGState):
     
     try:
         # 체인 구성: 프롬프트 → LLM → JSON 파서
-        chain = prompt | llm | JsonOutputParser()
+        chain = prompt | model | JsonOutputParser()
         
         # 실행
         result = chain.invoke({"question": state["question"]})
@@ -275,9 +310,13 @@ def generate_answer(state: EntityRAGState):
     # 컨텍스트 구성
     context = "\n".join(d.page_content for d in state["merged_docs"])
     
-    # LLM 호출
-    llm = get_llm()
-    response = llm.invoke(f"컨텍스트: {context}\n\n질문: {state['question']}\n답변:")
+    # LLM 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
+    response = model.invoke(f"컨텍스트: {context}\n\n질문: {state['question']}\n답변:")
     
     return {"answer": response.content}
 
@@ -286,7 +325,7 @@ def generate_answer(state: EntityRAGState):
 # 🔀 4. 그래프 구성 (병렬 실행)
 # =============================================================================
 
-def create_entity_rag_graph():
+def create_graph():
     """
     Entity RAG 그래프 생성
     
@@ -344,14 +383,14 @@ def run_entity_rag(question: str):
     """
     Entity RAG 파이프라인을 실행하여 질문에 답변합니다.
     """
-    graph = create_entity_rag_graph()
+    app = create_graph()
     
     print(f"\n{'='*60}")
     print(f"🙋 질문: {question}")
     print('='*60)
     
     try:
-        result = graph.invoke({"question": question})
+        result = app.invoke({"question": question})
         print(f"\n🤖 답변: {result['answer']}")
         
     except Exception as e:

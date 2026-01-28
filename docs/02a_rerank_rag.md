@@ -64,10 +64,9 @@ graph LR
 ```python
 def retrieve_node(state: RerankRAGState) -> dict:
     """[1단계: 일단 많이 찾기] 필요 이상으로 넉넉하게 문서를 검색합니다."""
-    # 나중에 3개롤 걸러낼 예정이므로, 일단 6개를 넉넉히 찾아옵니다.
+    # 나중에 3개로 걸러낼 예정이므로, 일단 6개를 넉넉히 찾아옵니다.
     docs = vs.search(query=state["question"], k=6)
     
-    # 찾아온 것들을 'initial_documents' 칸에 보관합니다.
     return {"initial_documents": docs}
 ```
 
@@ -75,10 +74,10 @@ def retrieve_node(state: RerankRAGState) -> dict:
 ```python
 def rerank_node(state: RerankRAGState) -> dict:
     """[2단계: AI가 꼼꼼히 다시 고르기] 찾아온 것들 중 진짜 정답 후보를 골라냅니다."""
-    # AI 심사위원에게 문서의 관련성을 0~10점으로 평가해달라고 합니다.
-    # 1. 모든 문서에 대해 AI 점수를 매깁니다.
+    # 1. 모든 문서에 대해 AI가 관련성 점수를 매기도록 루프 실행
+    scored_docs = []
     for doc in state["initial_documents"]:
-        score = llm.invoke(...) # AI 점수 산출
+        # llm.invoke()를 통한 점수 산출 로직...
         scored_docs.append({"document": doc, "score": score})
     
     # 2. 점수가 높은 순으로 정렬하고 상위 3개만 딱 골라냅니다.

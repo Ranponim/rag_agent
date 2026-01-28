@@ -20,13 +20,19 @@
 # =============================================================================
 
 import sys                              # 시스템 환경 제어
+import os                               # 환경변수 접근
 from pathlib import Path                # 경로 관리
 from typing import Literal              # 특정 텍스트 타입 지정
 
 # 프로젝트 루트(최상위 폴더)를 경로에 추가하여 다른 폴더의 모듈을 불러올 수 있게 합니다.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
+
 # LangChain 메시지 형식 (사람, 시스템 메시지)
+from langchain_openai import ChatOpenAI # LLM 모델 클래스
 from langchain_core.messages import HumanMessage, SystemMessage
 # 파이썬 함수를 AI용 도구로 변환
 from langchain_core.tools import tool
@@ -37,8 +43,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver  # 대화 내용을 메모리에 임시 저장하는 도구
 
 # 프로젝트 공통 유틸리티
-from config.settings import get_settings
-from utils.llm_factory import get_llm, log_llm_error
+from utils.llm_factory import log_llm_error
 
 
 # =============================================================================
@@ -77,9 +82,13 @@ tools = [remember_user_info, calculate]
 
 def agent_node(state: MessagesState) -> dict:
     """지금까지의 대화(state)를 보고 다음에 할 일을 결정합니다."""
-    # 1. AI 모델을 가져오고 도구들을 연결합니다.
-    llm = get_llm()
-    llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
+    # 1. AI 모델을 초기화하고 도구들을 연결합니다.
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
+    model_with_tools = model.bind_tools(tools, parallel_tool_calls=False)
     
     # 2. AI에게 부여할 성격(기억력이 좋은 비서)을 설정합니다.
     system_message = SystemMessage(content="""당신은 대화 내용을 아주 잘 기억하는 친절한 비서입니다.
@@ -93,7 +102,7 @@ def agent_node(state: MessagesState) -> dict:
     messages = [system_message] + state["messages"]
     
     # 4. AI에게 메시지를 전달하고 응답을 받습니다.
-    response = llm_with_tools.invoke(messages)
+    response = model_with_tools.invoke(messages)
     
     return {"messages": [response]}
 
@@ -102,7 +111,7 @@ def agent_node(state: MessagesState) -> dict:
 # 🗄️ 3. 메모리가 포함된 그래프 구성 (워크플로우 설계)
 # =============================================================================
 
-def create_memory_agent():
+def create_graph():
     """메모리 기능이 장착된 에이전트 순서도를 만듭니다."""
     # 1. 흐름도 그릴 캔버스(StateGraph) 준비
     builder = StateGraph(MessagesState)
@@ -136,7 +145,7 @@ def create_memory_agent():
 # ▶️ 4. 대화방(Thread)별 실행 함수
 # =============================================================================
 
-def run_chat(graph, thread_id: str, query: str):
+def run_chat(app, thread_id: str, query: str):
     """지정한 대화방 ID(thread_id)를 사용하여 대화를 나눕니다."""
     # 1. 어떤 대화방에서 이야기할지 'config' 설정을 만듭니다.
     # thread_id가 같으면 AI는 예전 대화 내용을 자동으로 불러옵니다.
@@ -147,7 +156,7 @@ def run_chat(graph, thread_id: str, query: str):
     
     try:
         # 2. 질문과 설정을 담아 그래프를 실행합니다.
-        result = graph.invoke(
+        result = app.invoke(
             {"messages": [HumanMessage(content=query)]},
             config=config # 여기서 대화방 정보를 넘깁니다.
         )
@@ -172,7 +181,7 @@ if __name__ == "__main__":
     print("- 'q', 'exit' : 프로그램을 종료합니다.\n")
     
     # 1. 기억 기능이 있는 에이전트를 생성합니다.
-    memory_graph = create_memory_agent()
+    app = create_graph()
     
     # 2. 처음 사용할 기본 대화방 ID를 정합니다.
     current_thread = "main_room"
@@ -197,7 +206,7 @@ if __name__ == "__main__":
                 continue
 
             # 입력한 방 ID와 질문으로 대화를 실행합니다.
-            run_chat(memory_graph, current_thread, user_input)
+            run_chat(app, current_thread, user_input)
             
         except KeyboardInterrupt:
             print("\n👋 프로그램을 종료합니다.")

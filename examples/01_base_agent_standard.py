@@ -11,9 +11,12 @@ LangGraph 표준 구조 베이스 코드 (Standard StateGraph Structure)
 3. 조건부 엣지(Conditional Edges)를 통한 흐름 제어
 """
 
-import sys
-from pathlib import Path
+import os
 from typing import Annotated, TypedDict
+
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
 
 # LangGraph 핵심 컴포넌트
 from langgraph.graph import StateGraph, START, END
@@ -24,10 +27,6 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, BaseMessage
 from langchain_core.tools import tool
-
-# 프로젝트 설정 로드 (API Key, Base URL 등)
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import get_settings
 
 # 1. 상태 정의 (State Definition)
 # 에이전트가 대화 내내 유지하고 업데이트할 데이터 구조를 정의합니다.
@@ -78,13 +77,12 @@ def call_model(state: AgentState):
     """
     LLM을 호출하여 다음 행동을 결정하는 노드입니다.
     """
-    settings = get_settings()
-    
     # 모델 초기화 및 도구 바인딩
     model = ChatOpenAI(
-        base_url=settings.openai_api_base,
-        api_key=settings.openai_api_key,
-        model=settings.openai_model
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    
     ).bind_tools(tools)
     
     # 모델 호출

@@ -65,11 +65,18 @@ class RAGState(TypedDict):
 ```
 
 ### 2. 검색 노드 (Retrieve)
-Vector Store에서 질문과 유사한 문서를 검색하고, 상태의 `documents` 필드를 업데이트합니다.
+`llm_factory`와 `VectorStoreManager`를 사용하여 질문과 유사한 문서를 검색합니다.
 
 ```python
-def retrieve(state: RAGState):
-    docs = vector_store.search(state["question"])
+# 유틸리티를 통한 임베딩 및 벡터 스토어 초기화
+from utils.llm_factory import get_embeddings
+from utils.vector_store import VectorStoreManager
+
+vs = VectorStoreManager(embeddings=get_embeddings())
+
+def retrieve_node(state: RAGState):
+    """문서를 검색하는 노드"""
+    docs = vs.search(state["question"])
     return {"documents": docs}
 ```
 
@@ -77,20 +84,50 @@ def retrieve(state: RAGState):
 검색된 `documents`를 프롬프트에 컨텍스트로 주입하여 LLM 답변을 생성합니다.
 
 ```python
-def generate(state: RAGState):
-    context = format_docs(state["documents"])
+def generate_node(state: RAGState):
+    """답변을 생성하는 노드"""
+    context = "\n\n".join(doc.page_content for doc in state["documents"])
+    # LLM 체인을 통한 답변 생성
     response = chain.invoke({"context": context, "question": state["question"]})
     return {"answer": response}
 ```
 
 ---
 
+## 📂 데이터 로딩 (Multi-format)
+
+본 예제는 `DirectoryLoader`를 사용하여 `./rag` 디렉토리 내의 다양한 파일 형식을 자동으로 로드합니다.
+
+```python
+def dataloader():
+    """다양한 형식의 문서를 자동으로 로드합니다."""
+    loader = DirectoryLoader(
+        "./rag",
+        glob="**/*.*",  # 모든 확장자 시도
+        show_progress=True,
+        use_multithreading=True,
+        # 각 파일 확장자에 맞는 로더 연결
+        loaders={
+            ".pdf": PyPDFLoader,
+            ".csv": CSVLoader,
+            ".xlsx": UnstructuredExcelLoader,
+            ".txt": TextLoader,
+            ".md": TextLoader,
+        }
+    )
+    docs = loader.load()
+    vs.add_documents(docs)
+```
+
+---
+
 ## 📝 실행 흐름
 
-1. **사용자**: "LangGraph가 뭐야?" (`question` 입력)
-2. **Retrieve**: 질문 벡터와 유사한 문서 2개 검색 (`documents` 업데이트)
-3. **Generate**: 문서 내용을 참고하여 답변 생성 (`answer` 업데이트)
-4. **End**: 최종 상태 반환
+1. **데이터 준비**: `./rag` 폴더의 문서를 로드하여 벡터 DB 구축
+2. **사용자 입력**: "LangGraph가 뭐야?" (`question` 입력)
+3. **Retrieve**: 질문 벡터와 유사한 문서 검색 (`documents` 업데이트)
+4. **Generate**: 문서 내용을 참고하여 답변 생성 (`answer` 업데이트)
+5. **End**: 최종 상태 반환
 
 ---
 
@@ -99,7 +136,10 @@ def generate(state: RAGState):
 ### 테스트 쿼리
 
 ```
-🙋 질문: LangGraph란 무엇인가요?
+RAG 시스템이 가동되었습니다. (대상 폴더: ./rag)
+종료하려면 'quit' 또는 'exit'를 입력하세요.
+
+🙋 질문을 입력하세요: LangGraph란 무엇인가요?
 ============================================================
 
 🔍 검색 중: 'LangGraph란 무엇인가요?'
@@ -118,24 +158,14 @@ LangGraph는 LangChain 팀에서 개발한 라이브러리로, 상태를 가진 
 
 ## 연습 문제
 
-### 1. 다양한 문서 형식
-
-PDF, CSV 등 다른 형식의 문서를 로드해보세요.
-
-```python
-from langchain_community.document_loaders import PyPDFLoader
-
-loader = PyPDFLoader("document.pdf")
-documents = loader.load()
-```
+### 1. 다양한 문서 추가
+`./rag` 디렉토리에 자신만의 `.txt`, `.pdf`, `.csv` 파일을 넣고 다시 실행해보세요. 자동으로 인식되어 검색 대상에 포함됩니다.
 
 ### 2. 검색 결과 개수 변경
+`vs.search(..., k=4)` 에서 `k` 값을 조절해 검색 결과 수가 답변에 미치는 영향을 확인하세요.
 
-`k` 값을 조절해 검색 결과 수가 답변에 미치는 영향을 확인하세요.
-
-### 3. 청크 크기 실험
-
-`chunk_size`와 `chunk_overlap`을 조절해 최적 값을 찾아보세요.
+### 3. Ollama 임베딩 사용
+`.env` 파일에서 `EMBEDDING_PROVIDER=ollama`로 변경하여 로컬 임베딩 모델을 사용해보세요.
 
 ---
 

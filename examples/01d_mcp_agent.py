@@ -33,8 +33,13 @@
 # =============================================================================
 
 import sys
+import os
 import asyncio
 from pathlib import Path
+
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
 
 # 프로젝트 루트를 경로에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -45,11 +50,6 @@ from langgraph.prebuilt import create_react_agent
 # LangChain 컴포넌트
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
-
-
-
-# 프로젝트 설정 로드
-from config.settings import get_settings
 
 # MCP 클라이언트 관리 유틸리티 (오류 처리 및 재시도 로직 포함)
 from utils.mcp_client import MCPClientManager
@@ -149,21 +149,16 @@ async def create_mcp_agent(server_configs: dict):
     💡 MCPClientManager를 사용하여 연결 관리, 오류 처리, 재시도 등을 자동화합니다.
        반환된 manager는 반드시 disconnect()를 호출하여 정리해야 합니다.
     """
-    # 설정 로드
-    settings = get_settings()
-    
     # LLM 모델 초기화
-    # create_react_agent가 내부적으로 도구를 바인딩하므로
-    # 여기서는 모델만 생성합니다.
     model = ChatOpenAI(
-        base_url=settings.openai_api_base,  # OpenAI 호환 API 엔드포인트
-        api_key=settings.openai_api_key,    # API 인증 키
-        model=settings.openai_model,        # 사용할 모델 이름
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
     )
     
     print(f"\n{'='*70}")
-    print(f"🤖 [Agent] LLM 모델 초기화: {settings.openai_model}")
-    print(f"🌐 [Agent] API Base: {settings.openai_api_base}")
+    print(f"🤖 [Agent] LLM 모델 초기화: {model_name}")
+    print(f"🌐 [Agent] API Base: {api_base}")
     print(f"{'='*70}\n")
     
     # MCP 클라이언트 매니저 생성 및 연결
@@ -247,7 +242,7 @@ async def run_interactive_mcp_agent(server_configs: dict = None):
     
     try:
         # 1. 초기화 (한 번만 수행)
-        manager, agent = await create_mcp_agent(server_configs)
+        manager, app = await create_mcp_agent(server_configs)
         
         # 대화 기록 유지
         chat_history = []
@@ -276,7 +271,7 @@ async def run_interactive_mcp_agent(server_configs: dict = None):
                 final_response_chunk = None
                 
                 # astream을 사용하여 실행 과정 시각화
-                async for chunk in agent.astream(
+                async for chunk in app.astream(
                     {"messages": current_messages},
                     stream_mode="values"
                 ):

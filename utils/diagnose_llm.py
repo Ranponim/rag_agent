@@ -4,10 +4,13 @@ from pathlib import Path
 import httpx
 import logging
 
-# 프로젝트 루트를 path에 추가하여 config 로드
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
+
+# 프로젝트 루트를 path에 추가하여 유틸리티 로드
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config.settings import get_settings
 from langchain_openai import ChatOpenAI
 
 # 로깅 설정
@@ -15,14 +18,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("diagnosis")
 
 def diagnose():
-    settings = get_settings()
+    # 환경변수에서 설정 로드
+    api_key = os.getenv("OPENAI_API_KEY", "lm-studio")
+    base_url = os.getenv("OPENAI_API_BASE", "http://localhost:1234/v1")
+    model = os.getenv("OPENAI_MODEL", "local-model")
     
     print("\n" + "="*60)
     print("🔍 LLM 연결 진단 스크립트")
     print("="*60)
-    
-    api_key = settings.openai_api_key or "dummy-key"
-    base_url = settings.openai_api_base
     
     print(f"📍 Target Base URL: {base_url}")
     print(f"🔑 API Key: {api_key[:4]}***")
@@ -66,7 +69,7 @@ def diagnose():
         llm = ChatOpenAI(
             api_key=api_key,
             base_url=base_url,
-            model=settings.openai_model,
+            model=model,
             temperature=0,
             max_retries=1, # 빠른 실패를 위해
         )
@@ -109,7 +112,7 @@ def diagnose():
         llm = ChatOpenAI(
             api_key=api_key,
             base_url=base_url,
-            model=settings.openai_model,
+            model=model,
             temperature=0,
             max_retries=1,
             streaming=True

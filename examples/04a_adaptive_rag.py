@@ -20,13 +20,19 @@
 # =============================================================================
 
 import sys                              # 시스템 환경 제어
+import os                               # 환경변수 접근용
 from pathlib import Path                # 파일 경로 처리
 from typing import TypedDict, List, Literal  # 데이터 형식 및 리터럴 타입 정의
 
 # 프로젝트 최상위 폴더를 인식시켜 config나 utils를 사용할 수 있게 합니다.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
+
 # LangChain 문서 형식 및 프롬프트 도구
+from langchain_openai import ChatOpenAI # LLM 모델 클래스
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -34,8 +40,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, START, END
 
 # 프로젝트 전용 유틸리티
-from config.settings import get_settings
-from utils.llm_factory import get_llm, get_embeddings, log_llm_error
+from utils.llm_factory import get_embeddings, log_llm_error
 from utils.vector_store import VectorStoreManager
 
 
@@ -54,24 +59,50 @@ class AdaptiveRAGState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. 지식 창고(Vector Store) 준비
+# 🗄️ 2. 지식 창고(Vector Store) 및 데이터 로더(DataLoader)
 # =============================================================================
 
+from langchain_community.document_loaders import DirectoryLoader, TextLoader, CSVLoader
+
+def dataloader(manager: VectorStoreManager):
+    """./rag 폴더의 데이터를 읽어와 적응형 RAG 지식으로 활용합니다."""
+    print("\n📥 [데이터 로더] ./rag 폴더의 파일들을 적응형 RAG 지식으로 적재 중...")
+    
+    documents = []
+    # 파일 확장자별 로더 설정 (Windows 안정성을 위해 use_multithreading=False 권장)
+    for ext, loader_cls in {".txt": TextLoader, ".md": TextLoader, ".csv": CSVLoader}.items():
+        try:
+            loader = DirectoryLoader(
+                path="./rag", 
+                glob=f"**/*{ext}", 
+                loader_cls=loader_cls, 
+                loader_kwargs={"encoding": "utf-8"}, 
+                use_multithreading=False,
+                silent_errors=True
+            )
+            documents.extend(loader.load())
+        except: pass
+
+    if documents:
+        manager.add_documents(documents)
+        print(f"✅ {len(documents)}개의 파일 데이터가 적응형 RAG 저장소에 적재되었습니다.")
+    else:
+        texts = [
+            "LangGraph는 AI의 흐름을 지도처럼 그려주는 도구입니다.",
+            "Adaptive RAG는 난이도에 따라 검색 전략을 바꿉니다.",
+        ]
+        manager.add_texts(texts=texts)
+        print(f"✅ 기본 적응형 RAG 지식 {len(texts)}개가 적재되었습니다.")
+
 def get_adaptive_vs() -> VectorStoreManager:
-    """적응형 RAG를 위한 지식 항아리를 준비하고 데이터를 담습니다."""
+    """적응형 RAG를 위한 지식 항아리를 준비하고 DataLoader를 실행합니다."""
     embeddings = get_embeddings() # 문장을 숫자로 바꾸는 엔진
     # 'adaptive_rag'라는 이름의 칸에 지식을 저장합니다.
     manager = VectorStoreManager(embeddings=embeddings, collection_name="adaptive_rag")
 
-    # 지식 창고에 미리 넣어둘 문장들입니다.
-    texts = [
-        "LangGraph는 AI의 흐름을 지도처럼 그려주는 도구입니다.",
-        "RAG는 외부 문서를 찾아 답변을 보강하는 기술입니다.",
-        "Adaptive RAG는 난이도에 따라 검색 전략을 바꿉니다.",
-        "Vector Store는 지식을 벡터 형태로 저장하는 창고입니다.",
-    ]
-    # 문장들을 창고에 차곡차곡 쌓습니다.
-    manager.add_texts(texts=texts)
+    # 데이터 로더를 통해 데이터를 채웁니다.
+    dataloader(manager)
+    
     return manager
 
 
@@ -83,7 +114,12 @@ def classify_query_node(state: AdaptiveRAGState) -> dict:
     """[판별 단계] 질문을 읽고 '쉬움/보통/어려움' 중 하나로 분류합니다."""
     print(f"\n🧐 [분류] 질문의 수준을 분석 중입니다... 어떤 전략이 좋을까요?")
     
-    llm = get_llm()
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     # 심사위원 AI에게 질문의 난이도를 판단해달라고 지시합니다.
     prompt = ChatPromptTemplate.from_messages([
         ("system", """당신은 질문 분석 전문가입니다. 다음 3가지 중 하나로만 대답하세요.
@@ -94,7 +130,7 @@ def classify_query_node(state: AdaptiveRAGState) -> dict:
         ("human", "사용자 질문: {question}"),
     ])
     
-    response = (prompt | llm).invoke({"question": state["question"]})
+    response = (prompt | model).invoke({"question": state["question"]})
     # AI의 답변을 소문자로 바꾸고 공백을 제거합니다.
     complexity = response.content.lower().strip()
     
@@ -114,8 +150,12 @@ def classify_query_node(state: AdaptiveRAGState) -> dict:
 def simple_strategy_node(state: AdaptiveRAGState) -> dict:
     """[전략 1: 쉬운 질문] 검색 없이 AI 본인의 상식으로 바로 답합니다."""
     print("⚡ [Simple] 너무 쉬운 질문이라 검색 없이 바로 대답합니다.")
-    llm = get_llm()
-    res = llm.invoke(state["question"])
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
+    res = model.invoke(state["question"])
     return {"strategy_used": "Simple (직접 답변)", "answer": res.content}
 
 
@@ -128,9 +168,13 @@ def moderate_strategy_node(state: AdaptiveRAGState) -> dict:
     
     # 찾은 자료들을 한데 묶습니다.
     context = "\n".join([d.page_content for d in docs])
-    llm = get_llm()
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     # 찾은 자료와 함께 질문을 던져 답변을 받습니다.
-    res = llm.invoke(f"지식 내용:\n{context}\n\n질문: {state['question']}")
+    res = model.invoke(f"지식 내용:\n{context}\n\n질문: {state['question']}")
     
     return {
         "strategy_used": "Moderate (일반 RAG)", 
@@ -142,10 +186,14 @@ def moderate_strategy_node(state: AdaptiveRAGState) -> dict:
 def complex_strategy_node(state: AdaptiveRAGState) -> dict:
     """[전략 3: 어려운 질문] 질문을 쪼개서 깊게 조사하고 분석 보고서를 씁니다."""
     print("🔬 [Complex] 질문이 복잡하네요! 여러 단계로 나눠서 정밀 분석합니다.")
-    llm = get_llm()
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     
     # 1. 어려운 질문을 해결하기 위한 2개의 세부 질문을 AI에게 먼저 물어봅니다.
-    decompose_res = llm.invoke(f"이 어려운 질문을 해결하기 위해 먼저 알아야 할 기초 질문 2개만 뽑아주세요. 한 줄씩 쓰세요.\n질문: {state['question']}")
+    decompose_res = model.invoke(f"이 어려운 질문을 해결하기 위해 먼저 알아야 할 기초 질문 2개만 뽑아주세요. 한 줄씩 쓰세요.\n질문: {state['question']}")
     sub_queries = [q.strip() for q in decompose_res.content.split("\n") if q.strip()][:2]
     
     print(f"   → 단계별 세부 조사 항목: {sub_queries}")
@@ -159,7 +207,7 @@ def complex_strategy_node(state: AdaptiveRAGState) -> dict:
     
     # 3. 모은 모든 정보를 합쳐서(중복 제거) 심층 보고서 형태의 답변을 생성합니다.
     final_context = "\n".join(list(set(all_context)))
-    res = llm.invoke(f"심층 분석 답변 요청:\n관련된 모든 정보:\n{final_context}\n\n최종 질문: {state['question']}")
+    res = model.invoke(f"심층 분석 답변 요청:\n관련된 모든 정보:\n{final_context}\n\n최종 질문: {state['question']}")
     
     return {
         "strategy_used": "Complex (다단계 정밀 RAG)", 
@@ -175,7 +223,7 @@ def route_complexity(state: AdaptiveRAGState) -> Literal["simple", "moderate", "
     """AI가 판단한 난이도 칸을 보고 어느 길로 갈지 안내합니다."""
     return state["query_complexity"]
 
-def create_adaptive_graph():
+def create_graph():
     """상황에 따라 길이 바뀌는 '똑똑한 지도'를 완성합니다."""
     # 우리가 만든 작업노트(AdaptiveRAGState)를 사용하는 순서도입니다.
     builder = StateGraph(AdaptiveRAGState)
@@ -213,7 +261,7 @@ def create_adaptive_graph():
 # ▶️ 6. 실제로 돌려보기 (실행 프로그램)
 # =============================================================================
 
-def run_adaptive_rag(query: str, graph):
+def run_adaptive_rag(query: str, app):
     """질문을 하면 AI가 난이도를 분석하고 그에 맞춰 답변해줍니다."""
     print(f"\n{'='*60}")
     print(f"🙋 질문: {query}")
@@ -221,7 +269,7 @@ def run_adaptive_rag(query: str, graph):
     
     try:
         # 가동 준비 및 초기 메모장 세팅
-        result = graph.invoke({
+        result = app.invoke({
             "question": query,
             "query_complexity": "",
             "strategy_used": "",
@@ -245,7 +293,7 @@ if __name__ == "__main__":
     print("- 종료하려면 'q' 혹은 'exit'를 입력하세요.\n")
     
     # 1. 뼈대가 되는 흐름도 기계를 완성합니다.
-    adaptive_graph = create_adaptive_graph()
+    app = create_graph()
     
     # 2. 질문을 계속 받습니다.
     while True:
@@ -259,7 +307,7 @@ if __name__ == "__main__":
                 break
                 
             # 질문으로 시스템 작동!
-            run_adaptive_rag(user_input, adaptive_graph)
+            run_adaptive_rag(user_input, app)
             
         except KeyboardInterrupt:
             print("\n👋 급히 프로그램을 종료합니다.")

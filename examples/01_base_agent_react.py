@@ -11,8 +11,11 @@ LangGraph 최신 ReAct 구조 베이스 코드 (Modern create_react_agent)
 3. 간단한 도구(Tool) 결합 및 실행
 """
 
-import sys
-from pathlib import Path
+import os
+
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
 
 # LangGraph 프리빌트 에이전트 생성 도구
 from langgraph.prebuilt import create_react_agent
@@ -21,10 +24,6 @@ from langgraph.prebuilt import create_react_agent
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import tool
-
-# 프로젝트 설정 로드 (API Key, Base URL 등)
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from config.settings import get_settings
 
 # 1. 도구 정의 (Tool Definition)
 @tool
@@ -66,13 +65,11 @@ tools = [get_weather, calculate]
 
 # 2. 에이전트 생성 (Agent Setup)
 def create_agent():
-    settings = get_settings()
-    
     # 모델 초기화 (도구 바인딩은 create_react_agent가 내부적으로 처리함)
     model = ChatOpenAI(
-        base_url=settings.openai_api_base,
-        api_key=settings.openai_api_key,
-        model=settings.openai_model
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
     )
     
     # 에이전트의 역할과 지침 설정 (페르소나 정의)
@@ -81,19 +78,19 @@ def create_agent():
     # create_react_agent를 사용하여 한 줄로 그래프 생성
     # 참고: LangGraph 1.0+에서는 'prompt' 파라미터를 사용하여 시스템 프롬프트를 설정합니다.
     # (이전 버전의 'state_modifier'는 deprecated 되었습니다.)
-    agent_executor = create_react_agent(
+    app = create_react_agent(
         model, 
         tools=tools, 
         prompt=system_prompt
     )
     
-    return agent_executor
+    return app
 
 # 3. 실행부 (Execution) - CLI 대화형 인터페이스
 # 사용자 요청에 따라 로컬에서 직접 실행하실 수 있도록 구성하였습니다.
 if __name__ == "__main__":
     # 에이전트 생성
-    agent = create_agent()
+    app = create_agent()
     
     print("=" * 50)
     print("🤖 LangGraph ReAct 에이전트 (CLI 대화 모드)")
@@ -119,7 +116,7 @@ if __name__ == "__main__":
             
             # 에이전트 호출
             inputs = {"messages": [HumanMessage(content=user_input)]}
-            result = agent.invoke(inputs)
+            result = app.invoke(inputs)
             
             # 응답 출력
             if "messages" in result:
@@ -134,4 +131,4 @@ if __name__ == "__main__":
             break
         except Exception as e:
             print(f"\n❌ [오류 발생] {e}")
-            print("팁: LM Studio나 Ollama 등 로컬 LLM 서버가 활성화되어 있는지 확인해주세요.\n")
+            print("팁: 로컬 LLM 서버(LM Studio 등)의 연결 상태를 확인해주세요.\n")

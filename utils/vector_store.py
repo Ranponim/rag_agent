@@ -352,12 +352,14 @@ if __name__ == "__main__":
     # 간단한 테스트
     print("VectorStoreManager 테스트")
     
-    # 테스트용 임베딩 (HuggingFace 사용)
+    # 💡 get_embeddings()는 내부적으로 .env의 EMBEDDING_PROVIDER 설정을 따릅니다.
+    # 특정 provider를 강제하고 싶다면 get_embeddings(provider="openai") 처럼 사용 가능합니다.
     try:
         from utils.llm_factory import get_embeddings
-        embeddings = get_embeddings(provider="huggingface")
+        # 기본 임베딩 모델 로드 (OpenAI 또는 Ollama)
+        embeddings = get_embeddings()
         
-        manager = VectorStoreManager(embeddings=embeddings)
+        manager = VectorStoreManager(embeddings=embeddings, collection_name="test_collection")
         
         # 테스트 문서 추가
         test_texts = [
@@ -366,14 +368,19 @@ if __name__ == "__main__":
             "Vector Store는 임베딩 벡터를 저장하고 유사도 검색을 수행합니다.",
         ]
         
+        print("\n📥 테스트 데이터 추가 중...")
         manager.add_texts(test_texts)
         
         # 검색 테스트
-        results = manager.search("LangGraph란 무엇인가요?", k=2)
+        query = "LangGraph란 무엇인가요?"
+        results = manager.search(query, k=2)
         
-        print(f"\n검색 결과 ({len(results)}개):")
+        print(f"\n🔍 검색 테스트 (쿼리: '{query}')")
+        print(f"결과 ({len(results)}개):")
         for i, doc in enumerate(results, 1):
-            print(f"{i}. {doc.page_content[:50]}...")
+            print(f"   [{i}] {doc.page_content[:100]}")
             
     except Exception as e:
-        print(f"테스트 실패: {e}")
+        print(f"❌ 테스트 실패: {e}")
+        import traceback
+        traceback.print_exc()

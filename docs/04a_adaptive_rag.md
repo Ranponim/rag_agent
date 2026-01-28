@@ -67,12 +67,12 @@ graph TD
 ### 복잡도 분류 (심사위원 AI)
 ```python
 def classify_query_node(state: AdaptiveRAGState) -> dict:
-    """[판별 단계] 질문을 읽고 '쉬움/보통/어려움' 중 하나로 분류합니다."""
+    """[판별 단계] 질문을 읽고 'simple/moderate/complex' 중 하나로 분류합니다."""
     # AI 심사위원에게 질문의 난이도를 판단해달라고 지시합니다.
-    # 1. "simple": 인사, 상식 질문
-    # 2. "moderate": 일반 검색이 필요한 질문
-    # 3. "complex": 다각도 분석이 필요한 복잡한 질문
-    response = llm.invoke(...)
+    # 1. "simple": 인사, 잡담 등 검색이 필요 없는 질문
+    # 2. "moderate": 일반적인 RAG 검색이 필요한 질문
+    # 3. "complex": 다각도 분석이나 재작성이 필요한 복잡한 질문
+    response = llm.invoke(classify_prompt)
     
     return {"query_complexity": response.content.lower().strip()}
 ```
@@ -81,17 +81,11 @@ def classify_query_node(state: AdaptiveRAGState) -> dict:
 ```python
 def complex_strategy_node(state: AdaptiveRAGState) -> dict:
     """[전략 3: 어려운 질문] 질문을 쪼개서 깊게 조사하고 분석 보고서를 만듭니다."""
-    # 1. 어려운 질문을 해결하기 위한 2개의 세부 질문을 생성합니다.
-    sub_queries = llm.invoke(...) 
-    
-    # 2. 메인 질문 + 세부 질문들로 지식 창고를 각각 검색합니다.
-    for sq in sub_queries + [state["question"]]:
-        docs = vs.search(query=sq, k=2)
-        all_context.extend(docs)
-    
+    # 1. 복잡한 질문을 해결하기 위한 하위 질문(Sub-queries)을 생성하거나 재작성합니다.
+    # 2. 메인 질문 + 변형된 질문들로 지식 창고를 각각 검색합니다.
     # 3. 모은 모든 정보를 합쳐서 심층 답변을 생성합니다.
-    res = llm.invoke(...)
-    return {"strategy_used": "Complex (다단계 정밀 RAG)", "answer": res.content}
+    # (실제 코드는 rewrite와 multi-query 로직을 포함합니다)
+    return {"strategy_used": "Complex (다단계 정밀 RAG)", "answer": res}
 ```
 
 ---

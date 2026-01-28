@@ -217,6 +217,17 @@ LangGraph의 기본 구조와 에이전트 패턴을 학습합니다.
 
 ---
 
+### 🛠️ 공통 유틸리티 (Utilities)
+
+프로젝트 전반에서 사용되는 핵심 유틸리티 모듈입니다.
+
+| 모듈 | 문서 | 주요 기능 |
+|------|------|----------|
+| **LLM Factory** | [`utils_llm_factory.md`](docs/utils_llm_factory.md) | OpenAI/Ollama LLM 및 임베딩 생성과 캐싱 |
+| **Vector Store** | [`utils_vector_store.md`](docs/utils_vector_store.md) | ChromaDB 관리, 문서 청킹 및 검색 통합 |
+
+---
+
 ## 🛠️ 실행 방법
 
 각 예제는 독립적으로 실행 가능합니다.

@@ -24,10 +24,6 @@
     python examples/05_integrated_test.py
 """
 
-# =============================================================================
-# 📦 필수 라이브러리 임포트
-# =============================================================================
-
 import sys                              # 시스템 경로 조작
 from pathlib import Path                # 경로 관리
 from typing import TypedDict, List, Literal, Annotated  # 타입 힌팅
@@ -35,7 +31,13 @@ from typing import TypedDict, List, Literal, Annotated  # 타입 힌팅
 # 프로젝트 루트를 경로에 추가
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# .env 파일에서 환경변수 로드
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 # LangChain 구성 요소
+from langchain_openai import ChatOpenAI # LLM 모델 클래스
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
@@ -48,8 +50,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.memory import MemorySaver
 
 # 프로젝트 유틸리티
-from config.settings import get_settings
-from utils.llm_factory import get_llm, get_embeddings, log_llm_error
+from utils.llm_factory import get_embeddings, log_llm_error
 from utils.vector_store import VectorStoreManager
 
 
@@ -74,22 +75,49 @@ class IntegratedState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. Vector Store & Tools 준비
+# 🗄️ 2. Vector Store & 데이터 로더(DataLoader) & 도구(Tools) 준비
 # =============================================================================
 
-def get_combined_vs() -> VectorStoreManager:
-    """통합 테스트용 지식 데이터 로드"""
-    embeddings = get_embeddings()
-    manager = VectorStoreManager(embeddings=embeddings, collection_name="integrated_final")
-    if True:
+from langchain_community.document_loaders import DirectoryLoader, TextLoader, CSVLoader
+
+def dataloader(manager: VectorStoreManager):
+    """./rag 폴더에서 통합 테스트를 위한 최종 지식들을 읽어옵니다."""
+    print("\n📥 [데이터 로더] ./rag 폴더의 파일들을 통합 테스트 지식으로 적재 중...")
+    
+    documents = []
+    # 파일 확장자별 로더 설정 (Windows 안정성을 위해 use_multithreading=False 권장)
+    for ext, loader_cls in {".txt": TextLoader, ".md": TextLoader, ".csv": CSVLoader}.items():
+        try:
+            loader = DirectoryLoader(
+                path="./rag", 
+                glob=f"**/*{ext}", 
+                loader_cls=loader_cls, 
+                loader_kwargs={"encoding": "utf-8"}, 
+                use_multithreading=False,
+                silent_errors=True
+            )
+            documents.extend(loader.load())
+        except: pass
+
+    if documents:
+        manager.add_documents(documents)
+        print(f"✅ {len(documents)}개의 파일 데이터가 통합 테스트 저장소에 적재되었습니다.")
+    else:
         samples = [
             "LangGraph는 순환 그래프를 지원하는 에이전트 개발 프레임워크입니다.",
             "MemorySaver를 쓰면 thread_id별로 대화 내용을 기억할 수 있습니다.",
-            "Reranking은 검색된 문서의 우선순위를 LLM이 다시 매기는 기술입니다.",
-            "HyDE는 가짜 답변을 생성해 검색 정확도를 높이는 쿼리 변형 기법입니다.",
-            "에이전트는 LLM이 도구 사용 여부를 스스로 결정하는 시스템을 말합니다.",
         ]
         manager.add_texts(samples)
+        print(f"✅ 기본 통합 테스트 지식 {len(samples)}개가 적재되었습니다.")
+
+def get_combined_vs() -> VectorStoreManager:
+    """통합 테스트용 지식 데이터 초기화 및 DataLoader 실행"""
+    embeddings = get_embeddings()
+    manager = VectorStoreManager(embeddings=embeddings, collection_name="integrated_final")
+    
+    # 데이터 로더를 호출합니다.
+    dataloader(manager)
+    
     return manager
 
 @tool
@@ -119,13 +147,18 @@ def router_node(state: IntegratedState) -> dict:
     print("\n🧐 [Router] 사용자 질문 분석 중...")
     last_msg = state["messages"][-1].content
     
-    llm = get_llm()
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     prompt = ChatPromptTemplate.from_messages([
         ("system", "질문을 분석하여 'chat'(단순대화), 'rag'(지식검색), 'tool'(도구사용) 중 하나로 분류하세요. 단어 하나만 답하세요."),
         ("human", "{query}"),
     ])
     
-    res = (prompt | llm).invoke({"query": last_msg})
+    res = (prompt | model).invoke({"query": last_msg})
     q_type = res.content.lower().strip()
     
     # 안전 장치: 분류 실패 시 기본 chat
@@ -140,10 +173,15 @@ def chat_node(state: IntegratedState) -> dict:
     [노드 2] 일반 대화: 대화 지침을 기반으로 친절하게 답변합니다.
     """
     print("💬 [Chat] 일상 대화 또는 가벼운 응답 생성 중...")
-    llm = get_llm()
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     # 시스템 지침과 대화 메시지를 합쳐서 AI에게 전달합니다.
     messages = [SystemMessage(content="당신은 다정하고 똑똑한 비서입니다.")] + state["messages"]
-    res = llm.invoke(messages)
+    res = model.invoke(messages)
     return {"messages": [res], "steps_taken": state["steps_taken"] + ["chat"]}
 
 
@@ -153,10 +191,15 @@ def rag_pipeline_node(state: IntegratedState) -> dict:
     (복잡성을 줄이기 위해 하나의 노드에서 처리하거나, 원하면 더 나눌 수 있습니다)
     """
     print("🔍 [RAG] 지식 검색 및 문서 검증 진행 중...")
-    llm = get_llm()
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     
     # 1. 쿼리 변환 (HyDE)
-    hyde_res = llm.invoke(f"질문: {state['current_query']}\n이 질문에 대한 가상의 짧은 답변을 작성해 주세요.")
+    hyde_res = model.invoke(f"질문: {state['current_query']}\n이 질문에 대한 가상의 짧은 답변을 작성해 주세요.")
     
     # 2. 검색
     vs = get_combined_vs()
@@ -165,14 +208,14 @@ def rag_pipeline_node(state: IntegratedState) -> dict:
     # 3. 문서 평가 (Grading)
     valid_docs = []
     for d in docs:
-        grade = llm.invoke(f"문서: {d.page_content}\n질문: {state['current_query']}\n관련 있으면 'yes' 없으면 'no'라고만 하세요.")
+        grade = model.invoke(f"문서: {d.page_content}\n질문: {state['current_query']}\n관련 있으면 'yes' 없으면 'no'라고만 하세요.")
         if "yes" in grade.content.lower():
             valid_docs.append(d.page_content)
     
     context = "\n".join(valid_docs) if valid_docs else "관련 정보를 찾지 못했습니다."
     
     # 4. 답변 생성
-    ans = llm.invoke(f"참조:\n{context}\n\n질문: {state['current_query']}\n답변해 주세요.")
+    ans = model.invoke(f"참조:\n{context}\n\n질문: {state['current_query']}\n답변해 주세요.")
     
     return {"messages": [ans], "steps_taken": state["steps_taken"] + ["integrated_rag"]}
 
@@ -182,8 +225,13 @@ def tool_agent_node(state: IntegratedState) -> dict:
     [노드 4] 도구 에이전트: 도구를 선택하고 사용합니다.
     """
     print("🔧 [Tool Agent] 필요한 도구 탐색 및 실행 결정 중...")
-    llm = get_llm()
-    llm_with_tools = llm.bind_tools(tools, parallel_tool_calls=False)
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
+    model_with_tools = model.bind_tools(tools, parallel_tool_calls=False)
     
     # AI에게 메시지를 전달하고 도구 호출 응답을 받습니다.
     res = llm_with_tools.invoke(state["messages"])
@@ -212,7 +260,7 @@ def check_further_tools(state: IntegratedState) -> Literal["tools", "end"]:
 # 🔗 5. 그래프 조립 (Complete Graph)
 # =============================================================================
 
-def create_integrated_system():
+def create_graph():
     """모든 노드와 엣지를 연결하여 완성된 시스템을 만듭니다."""
     builder = StateGraph(IntegratedState)
     
@@ -254,7 +302,7 @@ def create_integrated_system():
 # ▶️ 6. 실행 및 인터페이스 (CLI)
 # =============================================================================
 
-def run_chat_loop(graph, thread_id: str):
+def run_chat_loop(app, thread_id: str):
     """지속적인 대화를 위한 CLI 루프"""
     print("\n" + "="*60)
     print("🚀 통합 AI 에이전트 시스템 가동 중...")
@@ -276,7 +324,7 @@ def run_chat_loop(graph, thread_id: str):
                 
             # 그래프 실행
             # 💡 messages에 내용을 담아 넘기면 Annotated 리듀서에 의해 자동 추가됨
-            result = graph.invoke(
+            result = app.invoke(
                 {"messages": [HumanMessage(content=user_input)]}, 
                 config=config
             )
@@ -299,10 +347,10 @@ def run_chat_loop(graph, thread_id: str):
 
 if __name__ == "__main__":
     # 1. 시스템 초기화 (그래프 생성)
-    final_agent = create_integrated_system()
+    app = create_graph()
     
     # 2. 고유 세션 ID 생성 (또는 고정값 사용)
     my_thread_id = "final_test_user_001"
     
     # 3. CLI 대화 루프 시작
-    run_chat_loop(final_agent, my_thread_id)
+    run_chat_loop(app, my_thread_id)

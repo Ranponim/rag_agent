@@ -20,13 +20,19 @@
 # =============================================================================
 
 import sys                              # 시스템 환경 제어용
+import os                               # 환경변수 접근용
 from pathlib import Path                # 파일 경로 처리용
 from typing import TypedDict, Literal, List  # 결과물 형식 정의용
 
 # 프로젝트 최상위 폴더를 인식시켜 다른 폴더의 모듈을 불러오게 합니다.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# .env 파일에서 환경변수 로드
+from dotenv import load_dotenv
+load_dotenv()
+
 # LangChain 메시지 형식과 프롬프트 템플릿(지시서 양식)
+from langchain_openai import ChatOpenAI # LLM 모델 클래스
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -34,8 +40,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, START, END
 
 # 프로젝트 유틸리티
-from config.settings import get_settings
-from utils.llm_factory import get_llm, log_llm_error
+from utils.llm_factory import log_llm_error
 
 
 # =============================================================================
@@ -66,7 +71,12 @@ def supervisor_node(state: MultiAgentState) -> dict:
     """
     print("\n🎯 [Supervisor] 업무 상황 체크 중... 다음엔 누구를 투입할까요?")
     
-    llm = get_llm() # AI 모델 호출
+    # AI 모델 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     
     # 팀장에게 주는 지침 메모입니다.
     prompt = ChatPromptTemplate.from_messages([
@@ -88,7 +98,7 @@ def supervisor_node(state: MultiAgentState) -> dict:
     ])
     
     # AI팀장이 상황을 보고 다음 담당자 이름을 말합니다.
-    response = (prompt | llm).invoke({
+    response = (prompt | model).invoke({
         "task": state["task"],
         "research_result": state.get("research_result") or "시작 전",
         "analysis_result": state.get("analysis_result") or "시작 전",
@@ -119,14 +129,18 @@ def researcher_node(state: MultiAgentState) -> dict:
     """
     print("\n🔬 [Researcher] 관련 정보를 열심히 조사하고 있습니다...")
     
-    llm = get_llm()
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     prompt = ChatPromptTemplate.from_messages([
         ("system", "당신은 탐사 보도 전문 리서처입니다. 주제에 대해 구체적인 사실 관계를 풍부하게 조사하세요."),
         ("human", "주제: {task}"),
     ])
     
     # AI가 조사를 수행합니다.
-    response = (prompt | llm).invoke({"task": state["task"]})
+    response = (prompt | model).invoke({"task": state["task"]})
     
     # 조사한 내용을 'research_result' 칸에 적어 놓습니다.
     return {
@@ -141,14 +155,18 @@ def analyst_node(state: MultiAgentState) -> dict:
     """
     print("\n📊 [Analyst] 수집된 자료를 바탕으로 심층 분석을 시작합니다...")
     
-    llm = get_llm()
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     prompt = ChatPromptTemplate.from_messages([
         ("system", "당신은 냉철한 데이터 분석가입니다. 리서치 결과를 토대로 장점, 단점, 앞으로의 전망을 분석하세요."),
         ("human", "리서치 내용:\n{research_result}"),
     ])
     
     # 리서치 결과를 보고 분석합니다.
-    response = (prompt | llm).invoke({"research_result": state["research_result"]})
+    response = (prompt | model).invoke({"research_result": state["research_result"]})
     
     # 분석 결과를 'analysis_result' 칸에 적습니다.
     return {
@@ -163,14 +181,18 @@ def writer_node(state: MultiAgentState) -> dict:
     """
     print("\n✍️ [Writer] 모든 자료를 종합하여 최종 결과물을 작성하고 있습니다...")
     
-    llm = get_llm()
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     prompt = ChatPromptTemplate.from_messages([
         ("system", "당신은 전문 작가입니다. 리서치와 분석 데이터를 활용해 가독성 좋은 보고서나 깔끔한 요약본을 작성하세요."),
         ("human", "재료:\n- 조사 정보: {research_result}\n- 전문 분석: {analysis_result}"),
     ])
     
     # 모든 재료를 모아서 글을 씁니다.
-    response = (prompt | llm).invoke({
+    response = (prompt | model).invoke({
         "research_result": state["research_result"],
         "analysis_result": state["analysis_result"]
     })
@@ -203,7 +225,7 @@ def route_by_supervisor(state: MultiAgentState) -> Literal["researcher", "analys
 # 🔗 4. 협업 그래프 구성 (조직도 만들기)
 # =============================================================================
 
-def create_multi_agent_graph():
+def create_graph():
     """AI들이 서로 어떻게 일감을 주고받을지 화살표를 그립니다."""
     # 우리가 만든 양식(MultiAgentState)을 사용하는 흐름도를 준비합니다.
     builder = StateGraph(MultiAgentState)
@@ -242,7 +264,7 @@ def create_multi_agent_graph():
 # ▶️ 5. 실행 함수 (명령 내리기)
 # =============================================================================
 
-def run_team_task(task_query: str, team_graph):
+def run_team_task(task_query: str, app):
     """지정한 업무를 AI 팀에게 시키고 그 결과를 구경합니다."""
     print(f"\n{'='*60}")
     print(f"📋 요청하신 업무: {task_query}")
@@ -261,7 +283,7 @@ def run_team_task(task_query: str, team_graph):
     
     try:
         # AI 팀 전체 시스템(그래프)을 가동합니다.
-        result = team_graph.invoke(initial_state)
+        result = app.invoke(initial_state)
         
         # 일이 끝난 뒤의 최종 보고서를 출력합니다.
         print(f"\n{'━'*60}")
@@ -289,7 +311,7 @@ if __name__ == "__main__":
     print("- 'q'나 'exit'를 입력하면 팀이 해산합니다.\n")
     
     # 1. 협업 시스템을 한 번만 구성합니다.
-    team_graph = create_multi_agent_graph()
+    app = create_graph()
     
     while True:
         try:
@@ -303,7 +325,7 @@ if __name__ == "__main__":
                 break
             
             # 작업을 시작합니다.
-            run_team_task(user_task, team_graph)
+            run_team_task(user_task, app)
             
         except KeyboardInterrupt:
             print("\n👋 급하게 종료합니다.")

@@ -45,10 +45,16 @@ from typing import TypedDict, List, Annotated
 # 프로젝트 루트를 Python 경로에 추가하여 내부 모듈 import 가능하게 함
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# .env 파일에서 환경변수 로드
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 # -----------------------------------------------------------------------------
 # 🔗 LangChain 핵심 모듈 임포트
 # -----------------------------------------------------------------------------
 
+from langchain_openai import ChatOpenAI # LLM 모델 클래스
 from langchain_core.documents import Document
 # Document: 검색된 텍스트를 담는 표준 객체
 # - page_content: 실제 텍스트 내용
@@ -71,11 +77,7 @@ from langgraph.graph import StateGraph, START, END
 # 🔗 프로젝트 내부 유틸리티 임포트
 # -----------------------------------------------------------------------------
 
-from config.settings import get_settings
-# 환경 변수에서 설정 읽기 (API 키, 서버 URL 등)
-
-from utils.llm_factory import get_llm, get_embeddings, log_llm_error
-# - get_llm: LLM 인스턴스 생성
+from utils.llm_factory import get_embeddings, log_llm_error
 # - get_embeddings: 텍스트를 벡터로 변환하는 임베딩 모델
 # - log_llm_error: LLM 오류 상세 로깅
 
@@ -113,47 +115,89 @@ class RAGState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. Vector Store 및 데이터 준비
+# 🗄️ 2. Vector Store 및 데이터 로더(DataLoader - LangChain DirectoryLoader)
 # =============================================================================
 #
-# Vector Store란?
-# - 텍스트를 벡터(숫자 배열)로 변환하여 저장하는 데이터베이스
-# - 유사한 의미를 가진 텍스트끼리 가까운 벡터 값을 가짐
-# - "서울 날씨"와 "수도의 기온"은 서로 다른 단어지만 벡터상 가까움
-#
-# 이 예제에서는 Chroma DB를 사용 (로컬에서 동작하는 벡터 DB)
+# 💡 LangChain DirectoryLoader란?
+# - 특정 폴더 내의 파일들을 한꺼번에 불러올 때 사용하는 도구입니다.
+# - 파일 확장자에 따라 적절한 로더(TextLoader, PDFLoader 등)를 연결할 수 있습니다.
+# - 현재 예제에서는 `./rag` 폴더에 있는 파일들을 자동으로 인식하여 적재합니다.
 # =============================================================================
+
+from langchain_community.document_loaders import (
+    DirectoryLoader, 
+    TextLoader, 
+    CSVLoader, 
+    PyPDFLoader,
+    UnstructuredExcelLoader
+)
+
+def dataloader(manager: VectorStoreManager):
+    """
+    LangChain의 DirectoryLoader를 사용하여 ./rag 폴더의 다양한 파일을 로딩합니다.
+    """
+    print("\n📥 LangChain DirectoryLoader를 통한 데이터 로딩 중...")
+    
+    rag_dir = "./rag"
+    
+    # 해당 폴더가 없으면 생성 (실습 편의용)
+    if not os.path.exists(rag_dir):
+        os.makedirs(rag_dir)
+        print(f"   → {rag_dir} 폴더가 생성되었습니다. 파일을 넣어주세요.")
+
+    # 1. 지원하는 파일 확장자와 로더 매핑
+    # loader_map을 순회하며 확장자별로 DirectoryLoader를 설정합니다.
+    loader_map = {
+        ".txt": TextLoader,
+        ".md": TextLoader,
+        ".csv": CSVLoader,
+        ".pdf": PyPDFLoader,
+        ".xlsx": UnstructuredExcelLoader
+    }
+    
+    all_documents = []
+    
+    for ext, loader_cls in loader_map.items():
+        try:
+            # DirectoryLoader 설정: glob 패턴을 통해 특정 확장자 파일만 필터링
+            # 💡 Windows 환경에서의 안정성을 위해 use_multithreading=False 설정을 권장합니다.
+            loader = DirectoryLoader(
+                path=rag_dir,
+                glob=f"**/*{ext}", # 해당 확장자 파일 모두 찾기
+                loader_cls=loader_cls,
+                loader_kwargs={"encoding": "utf-8"}, # 모든 로더에 UTF-8 인코딩 적용 (Windows 필수)
+                use_multithreading=False, # Windows 안정성을 위해 스레딩 비활성화
+                silent_errors=True # 라이브러리 미설치 시 해당 확장자만 스킵
+            )
+            
+            # 문서 로드
+            docs = loader.load()
+            if docs:
+                all_documents.extend(docs)
+                print(f"   → {ext} 파일 {len(docs)}개 로드 완료")
+                
+        except Exception as e:
+            print(f"   ⚠️ {ext} 로더 경고: {str(e)[:50]}... (필요 라이브러리 확인 요망)")
+
+    # 2. 로드된 문서가 있으면 Vector Store에 추가
+    if all_documents:
+        # manager.add_documents는 내부적으로 텍스트 분할(Chunking)을 수행합니다.
+        manager.add_documents(all_documents)
+        print(f"✅ 총 {len(all_documents)}개의 문서 조각이 Vector Store에 저장되었습니다.")
+    else:
+        # 데이터가 하나도 없는 경우 기본 텍스트라도 추가하여 동작 확인
+        print("   ⚠️ 로딩된 문서가 없습니다. 기본 테스트 데이터를 적재합니다.")
+        manager.add_texts(["LangGraph와 RAG 예제 데이터입니다."])
 
 def get_vector_store() -> VectorStoreManager:
     """
-    Vector Store를 초기화하고 샘플 데이터를 로드합니다.
-    
-    Returns:
-        VectorStoreManager: 초기화된 벡터 스토어 관리자
-        
-    💡 실제 서비스에서는:
-       - 별도 데이터 로딩 파이프라인 구축
-       - 중복 데이터 체크 로직 추가
-       - 영구 저장소(디스크) 사용
+    Vector Store를 초기화하고 DirectoryLoader 기반 dataloader를 호출합니다.
     """
-    # 임베딩 모델 가져오기 (텍스트 → 벡터 변환용)
     embeddings = get_embeddings()
-    
-    # Vector Store Manager 생성
-    # collection_name: 데이터를 저장할 컬렉션(테이블) 이름
     manager = VectorStoreManager(embeddings=embeddings, collection_name="naive_rag")
     
-    # 샘플 데이터 추가 (예제용)
-    # 실제로는 매번 추가하지 않고 조건 체크 필요
-    if True:  # 예제 단순화를 위해 항상 실행
-        texts = [
-            "LangGraph는 LangChain 위에서 구축된 라이브러리로, 순환(Cyclic) 그래프를 지원합니다.",
-            "RAG(Retrieval-Augmented Generation)는 외부 데이터를 검색하여 LLM의 맥락을 보강하는 기술입니다.",
-            "LangChain은 LLM 애플리케이션 개발을 위한 프레임워크입니다.",
-            "StateGraph는 LangGraph의 핵심 클래스로, 상태를 가진 노드들의 흐름을 정의합니다.",
-        ]
-        # 텍스트들을 벡터로 변환하여 저장
-        manager.add_texts(texts)
+    # 통합 데이터 로더 호출
+    dataloader(manager)
 
     return manager
 
@@ -245,12 +289,16 @@ def generate(state: RAGState):
     # Step 3: 체인 구성 및 실행
     # -------------------------------------------------------------------------
     
-    # LLM 인스턴스 가져오기
-    llm = get_llm()
+    # LLM 인스턴스 초기화
+    model = ChatOpenAI(
+        base_url=os.getenv("OPENAI_API_BASE"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        model=os.getenv("OPENAI_MODEL")
+    )
     
     # 체인 구성: 프롬프트 → LLM
     # LCEL (LangChain Expression Language) 문법: | 로 체인 연결
-    chain = prompt | llm
+    chain = prompt | model
     
     # 체인 실행: 템플릿의 변수들에 실제 값을 넣어서 LLM 호출
     response = chain.invoke({
@@ -266,7 +314,7 @@ def generate(state: RAGState):
 # 🔀 4. 그래프 구성
 # =============================================================================
 
-def create_rag_graph():
+def create_graph():
     """
     Naive RAG 그래프를 생성합니다.
     
@@ -321,7 +369,7 @@ def run_rag(question: str):
         question: 사용자의 질문 문자열
     """
     # 그래프 생성
-    graph = create_rag_graph()
+    app = create_graph()
     
     print(f"\n{'='*60}")
     print(f"🙋 질문: {question}")
@@ -329,7 +377,7 @@ def run_rag(question: str):
     
     try:
         # 그래프 실행 (초기 상태: 질문만 설정)
-        result = graph.invoke({"question": question})
+        result = app.invoke({"question": question})
         
         # 결과 출력
         print(f"\n🤖 답변: {result['answer']}")

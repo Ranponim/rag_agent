@@ -63,12 +63,12 @@ LangGraph에서는 한 노드에서 여러 노드로 엣지를 연결하면 자�
 
 ```python
 # Fan-out: 추출 후 두 검색 동시 시작
-builder.add_edge("extract_entities", "entity_search")
-builder.add_edge("extract_entities", "semantic_search")
+builder.add_edge("extract_entities_node", "entity_search_node")
+builder.add_edge("extract_entities_node", "semantic_search_node")
 
 # Fan-in: 두 검색이 끝나면 병합
-builder.add_edge("entity_search", "merge")
-builder.add_edge("semantic_search", "merge")
+builder.add_edge("entity_search_node", "merge_node")
+builder.add_edge("semantic_search_node", "merge_node")
 ```
 
 ### 2. 엔티티 추출 (Structured Output)
