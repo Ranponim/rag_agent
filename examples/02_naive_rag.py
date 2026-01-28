@@ -193,7 +193,8 @@ def get_vector_store() -> VectorStoreManager:
     """
     Vector Store를 초기화하고 DirectoryLoader 기반 dataloader를 호출합니다.
     """
-    embeddings = get_embeddings()
+    # Ollama embedding 사용 (로컬 모델 사용)
+    embeddings = get_embeddings(provider="ollama")
     manager = VectorStoreManager(embeddings=embeddings, collection_name="naive_rag")
     
     # 통합 데이터 로더 호출
@@ -211,6 +212,18 @@ def get_vector_store() -> VectorStoreManager:
 # - 출력: dict (업데이트할 필드와 값)
 # =============================================================================
 
+# 전역 Vector Store (한 번만 초기화)
+_vector_store = None
+
+def get_or_create_vector_store() -> VectorStoreManager:
+    """
+    Vector Store를 한 번만 초기화하고 재사용합니다.
+    """
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = get_vector_store()
+    return _vector_store
+
 def retrieve(state: RAGState):
     """
     문서 검색 노드: 사용자 질문과 관련된 문서를 Vector Store에서 검색합니다.
@@ -226,10 +239,10 @@ def retrieve(state: RAGState):
        2. Vector Store에서 가장 유사한 벡터를 가진 문서들을 검색
        3. 상위 k개의 문서를 반환
     """
-    print(f"\n🔍 검색 수행: {state['question']}")
+    print(f"� 검색 수행: {state['question']}")
     
-    # Vector Store 가져오기
-    vs = get_vector_store()
+    # Vector Store 가져오기 (전역 변수 사용)
+    vs = get_or_create_vector_store()
     
     # 유사도 검색 수행 (상위 2개 문서 검색)
     # k: 검색할 문서 개수
@@ -372,7 +385,7 @@ def run_rag(question: str):
     app = create_graph()
     
     print(f"\n{'='*60}")
-    print(f"🙋 질문: {question}")
+    print(f"🤖 질문: {question}")
     print('='*60)
     
     try:
@@ -404,7 +417,7 @@ if __name__ == "__main__":
     while True:
         try:
             # 사용자 입력 받기
-            question = input("🙋 질문을 입력하세요: ").strip()
+            question = input("🧑 질문을 입력하세요: ").strip()
             
             # 빈 입력 무시
             if not question:

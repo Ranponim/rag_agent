@@ -175,14 +175,12 @@ def get_embeddings(**kwargs) -> Embeddings:
     provider = kwargs.pop("provider", os.getenv("EMBEDDING_PROVIDER", "openai")).lower()
     
     if provider == "ollama":
-        # Ollama 임베딩 사용
+        # Ollama 임베딩 사용 (로컬 기본 설정 사용)
         model = os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
-        base_url = os.getenv("OLLAMA_EMBEDDING_BASE_URL", "http://localhost:11434")
         
-        logger.info(f"Ollama 임베딩 provider 사용 (모델: {model})")
+        logger.info(f"Ollama 임베딩 provider 사용 (모델: {model}, 로컬 기본 설정)")
         return LLMFactory.create_ollama_embeddings(
             model=model,
-            base_url=base_url,
             **kwargs
         )
     else:
