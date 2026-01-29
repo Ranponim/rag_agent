@@ -129,8 +129,32 @@ from langchain_community.document_loaders import (
     TextLoader, 
     CSVLoader, 
     PyPDFLoader,
-    UnstructuredExcelLoader
+    UnstructuredExcelLoader,
+    BSHTMLLoader
 )
+from langchain_community.document_loaders.base import BaseLoader
+
+class JSONLLineLoader(BaseLoader):
+    """
+    JSONL(Line-delimited JSON) 파일을 한 줄씩 읽어서 Document로 변환하는 로더
+    """
+    def __init__(self, file_path, encoding='utf-8'):
+        self.file_path = file_path
+        self.encoding = encoding
+
+    def load(self) -> List[Document]:
+        docs = []
+        try:
+            with open(self.file_path, 'r', encoding=self.encoding) as f:
+                for line in f:
+                    if line.strip():
+                        docs.append(Document(
+                            page_content=line,
+                            metadata={"source": self.file_path}
+                        ))
+        except Exception as e:
+            print(f"Error loading {self.file_path}: {e}")
+        return docs
 
 def dataloader(manager: VectorStoreManager):
     """
@@ -152,20 +176,30 @@ def dataloader(manager: VectorStoreManager):
         ".md": TextLoader,
         ".csv": CSVLoader,
         ".pdf": PyPDFLoader,
-        ".xlsx": UnstructuredExcelLoader
+        ".xlsx": UnstructuredExcelLoader,
+        ".json": TextLoader,
+        ".html": BSHTMLLoader,
+        ".jsonl": JSONLLineLoader
     }
     
     all_documents = []
     
     for ext, loader_cls in loader_map.items():
         try:
+            # 로더별 적절한 인자 설정
+            loader_kwargs = {}
+            if ext in [".txt", ".md", ".csv", ".json", ".jsonl"]:
+                loader_kwargs["encoding"] = "utf-8"
+            elif ext == ".html":
+                loader_kwargs["open_encoding"] = "utf-8"
+
             # DirectoryLoader 설정: glob 패턴을 통해 특정 확장자 파일만 필터링
             # 💡 Windows 환경에서의 안정성을 위해 use_multithreading=False 설정을 권장합니다.
             loader = DirectoryLoader(
                 path=rag_dir,
                 glob=f"**/*{ext}", # 해당 확장자 파일 모두 찾기
                 loader_cls=loader_cls,
-                loader_kwargs={"encoding": "utf-8"}, # 모든 로더에 UTF-8 인코딩 적용 (Windows 필수)
+                loader_kwargs=loader_kwargs, # 로더별 맞춤 인자 적용
                 use_multithreading=False, # Windows 안정성을 위해 스레딩 비활성화
                 silent_errors=True # 라이브러리 미설치 시 해당 확장자만 스킵
             )
