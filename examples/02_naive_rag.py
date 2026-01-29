@@ -468,7 +468,7 @@ if __name__ == "__main__":
             
         except KeyboardInterrupt:
             print("\n👋 RAG Agent를 종료합니다. (Ctrl+C)")
-            break
+            sys.exit(0)
         except EOFError:
             print("\n👋 RAG Agent를 종료합니다. (EOF)")
-            break
+            sys.exit(0)
