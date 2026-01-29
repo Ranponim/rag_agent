@@ -62,7 +62,7 @@ class VectorStoreManager:
         embeddings: Optional[Embeddings] = None,
         collection_name: str = "langgraph_rag",
         persist_directory: Optional[str] = None,
-        chunk_size: int = 1000,
+        chunk_size: int = 2000,
         chunk_overlap: int = 200,
     ):
         """
