@@ -128,6 +128,10 @@ class LLMFactory:
         
         # OllamaEmbeddings 인스턴스 생성
         # base_url이 None이면 OllamaEmbeddings의 기본값(http://localhost:11434) 사용
+        # num_ctx: 문맥 길이 (기본값 2048 -> 8192로 증설하여 긴 텍스트 처리 지원)
+        if "num_ctx" not in kwargs:
+            kwargs["num_ctx"] = 8192
+
         embeddings = OllamaEmbeddings(
             model=model,
             base_url=base_url,
