@@ -119,8 +119,9 @@ class RAGState(TypedDict):
 # =============================================================================
 
 from utils.data_loader import get_rag_vector_store
-def get_rerank_vs() -> VectorStoreManager:
-    """Rerank 전용 지식 창고를 만들고 데이터를 로드합니다."""
+
+def get_naive_vs() -> VectorStoreManager:
+    """Naive RAG 전용 지식 창고를 만들고 데이터를 로드합니다."""
     return get_rag_vector_store(collection_name="naive_rag")
 
 
@@ -132,18 +133,6 @@ def get_rerank_vs() -> VectorStoreManager:
 # - 입력: state (현재 그래프 상태)
 # - 출력: dict (업데이트할 필드와 값)
 # =============================================================================
-
-# 전역 Vector Store (한 번만 초기화)
-_vector_store = None
-
-def get_or_create_vector_store() -> VectorStoreManager:
-    """
-    Vector Store를 한 번만 초기화하고 재사용합니다.
-    """
-    global _vector_store
-    if _vector_store is None:
-        _vector_store = get_vector_store()
-    return _vector_store
 
 def retrieve(state: RAGState):
     """
@@ -160,10 +149,10 @@ def retrieve(state: RAGState):
        2. Vector Store에서 가장 유사한 벡터를 가진 문서들을 검색
        3. 상위 k개의 문서를 반환
     """
-    print(f"� 검색 수행: {state['question']}")
+    print(f"🔎 검색 수행: {state['question']}")
     
-    # Vector Store 가져오기 (전역 변수 사용)
-    vs = get_or_create_vector_store()
+    # Vector Store 가져오기
+    vs = get_naive_vs()
     
     # 유사도 검색 수행 (상위 2개 문서 검색)
     # k: 검색할 문서 개수
