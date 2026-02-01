@@ -125,8 +125,109 @@ class RAGState(TypedDict):
 # =============================================================================
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 from utils.data_loader import get_rag_vector_store
 
+=======
+from langchain_community.document_loaders import (
+    DirectoryLoader, 
+    TextLoader, 
+    CSVLoader, 
+    PyPDFLoader,
+    UnstructuredExcelLoader,
+    BSHTMLLoader
+)
+from langchain_community.document_loaders.base import BaseLoader
+
+class JSONLLineLoader(BaseLoader):
+    """
+    JSONL(Line-delimited JSON) 파일을 한 줄씩 읽어서 Document로 변환하는 로더
+    """
+    def __init__(self, file_path, encoding='utf-8'):
+        self.file_path = file_path
+        self.encoding = encoding
+
+    def load(self) -> List[Document]:
+        docs = []
+        try:
+            with open(self.file_path, 'r', encoding=self.encoding) as f:
+                for line in f:
+                    if line.strip():
+                        docs.append(Document(
+                            page_content=line,
+                            metadata={"source": self.file_path}
+                        ))
+        except Exception as e:
+            print(f"Error loading {self.file_path}: {e}")
+        return docs
+
+def dataloader(manager: VectorStoreManager):
+    """
+    LangChain의 DirectoryLoader를 사용하여 ./rag 폴더의 다양한 파일을 로딩합니다.
+    """
+    print("\n📥 LangChain DirectoryLoader를 통한 데이터 로딩 중...")
+    
+    rag_dir = "./rag"
+    
+    # 해당 폴더가 없으면 생성 (실습 편의용)
+    if not os.path.exists(rag_dir):
+        os.makedirs(rag_dir)
+        print(f"   → {rag_dir} 폴더가 생성되었습니다. 파일을 넣어주세요.")
+
+    # 1. 지원하는 파일 확장자와 로더 매핑
+    # loader_map을 순회하며 확장자별로 DirectoryLoader를 설정합니다.
+    loader_map = {
+        ".txt": TextLoader,
+        ".md": TextLoader,
+        ".csv": CSVLoader,
+        ".pdf": PyPDFLoader,
+        ".xlsx": UnstructuredExcelLoader,
+        ".json": TextLoader,
+        ".html": BSHTMLLoader,
+        ".jsonl": JSONLLineLoader
+    }
+    
+    all_documents = []
+    
+    for ext, loader_cls in loader_map.items():
+        try:
+            # 로더별 적절한 인자 설정
+            loader_kwargs = {}
+            if ext in [".txt", ".md", ".csv", ".json", ".jsonl"]:
+                loader_kwargs["encoding"] = "utf-8"
+            elif ext == ".html":
+                loader_kwargs["open_encoding"] = "utf-8"
+
+            # DirectoryLoader 설정: glob 패턴을 통해 특정 확장자 파일만 필터링
+            # 💡 Windows 환경에서의 안정성을 위해 use_multithreading=False 설정을 권장합니다.
+            loader = DirectoryLoader(
+                path=rag_dir,
+                glob=f"**/*{ext}", # 해당 확장자 파일 모두 찾기
+                loader_cls=loader_cls,
+                loader_kwargs=loader_kwargs, # 로더별 맞춤 인자 적용
+                use_multithreading=False, # Windows 안정성을 위해 스레딩 비활성화
+                silent_errors=True # 라이브러리 미설치 시 해당 확장자만 스킵
+            )
+            
+            # 문서 로드
+            docs = loader.load()
+            if docs:
+                all_documents.extend(docs)
+                print(f"   → {ext} 파일 {len(docs)}개 로드 완료")
+                
+        except Exception as e:
+            print(f"   ⚠️ {ext} 로더 경고: {str(e)[:50]}... (필요 라이브러리 확인 요망)")
+
+    # 2. 로드된 문서가 있으면 Vector Store에 추가
+    if all_documents:
+        # manager.add_documents는 내부적으로 텍스트 분할(Chunking)을 수행합니다.
+        manager.add_documents(all_documents)
+        print(f"✅ 총 {len(all_documents)}개의 문서 조각이 Vector Store에 저장되었습니다.")
+    else:
+        # 데이터가 하나도 없는 경우 기본 텍스트라도 추가하여 동작 확인
+        print("   ⚠️ 로딩된 문서가 없습니다. 기본 테스트 데이터를 적재합니다.")
+        manager.add_texts(["LangGraph와 RAG 예제 데이터입니다."])
+>>>>>>> e8ec7b919a6272dc13081ff5bf0c3aee7bd02f22
 
 def get_vector_store() -> VectorStoreManager:
     """
