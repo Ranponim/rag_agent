@@ -115,92 +115,27 @@ class RAGState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. Vector Store 및 데이터 로더(DataLoader - LangChain DirectoryLoader)
+# 🗄️ 2. Vector Store 초기화 (공통 모듈 사용)
 # =============================================================================
 #
-# 💡 LangChain DirectoryLoader란?
-# - 특정 폴더 내의 파일들을 한꺼번에 불러올 때 사용하는 도구입니다.
-# - 파일 확장자에 따라 적절한 로더(TextLoader, PDFLoader 등)를 연결할 수 있습니다.
-# - 현재 예제에서는 `./rag` 폴더에 있는 파일들을 자동으로 인식하여 적재합니다.
+# 💡 데이터 로딩 및 벡터화는 utils/data_loader.py 공통 모듈에서 처리합니다.
+# - 다양한 파일 형식 지원 (TXT, MD, CSV, PDF, XLSX, JSON, JSONL)
+# - ./rag 폴더 파일 변경 감지 (추가/수정 시 자동 재임베딩)
+# - Vector Store 영속화 (한 번 임베딩한 데이터 재사용)
 # =============================================================================
 
-from langchain_community.document_loaders import (
-    DirectoryLoader, 
-    TextLoader, 
-    CSVLoader, 
-    PyPDFLoader,
-    UnstructuredExcelLoader
-)
-
-def dataloader(manager: VectorStoreManager):
-    """
-    LangChain의 DirectoryLoader를 사용하여 ./rag 폴더의 다양한 파일을 로딩합니다.
-    """
-    print("\n📥 LangChain DirectoryLoader를 통한 데이터 로딩 중...")
-    
-    rag_dir = "./rag"
-    
-    # 해당 폴더가 없으면 생성 (실습 편의용)
-    if not os.path.exists(rag_dir):
-        os.makedirs(rag_dir)
-        print(f"   → {rag_dir} 폴더가 생성되었습니다. 파일을 넣어주세요.")
-
-    # 1. 지원하는 파일 확장자와 로더 매핑
-    # loader_map을 순회하며 확장자별로 DirectoryLoader를 설정합니다.
-    loader_map = {
-        ".txt": TextLoader,
-        ".md": TextLoader,
-        ".csv": CSVLoader,
-        ".pdf": PyPDFLoader,
-        ".xlsx": UnstructuredExcelLoader
-    }
-    
-    all_documents = []
-    
-    for ext, loader_cls in loader_map.items():
-        try:
-            # DirectoryLoader 설정: glob 패턴을 통해 특정 확장자 파일만 필터링
-            # 💡 Windows 환경에서의 안정성을 위해 use_multithreading=False 설정을 권장합니다.
-            loader = DirectoryLoader(
-                path=rag_dir,
-                glob=f"**/*{ext}", # 해당 확장자 파일 모두 찾기
-                loader_cls=loader_cls,
-                loader_kwargs={"encoding": "utf-8"}, # 모든 로더에 UTF-8 인코딩 적용 (Windows 필수)
-                use_multithreading=False, # Windows 안정성을 위해 스레딩 비활성화
-                silent_errors=True # 라이브러리 미설치 시 해당 확장자만 스킵
-            )
-            
-            # 문서 로드
-            docs = loader.load()
-            if docs:
-                all_documents.extend(docs)
-                print(f"   → {ext} 파일 {len(docs)}개 로드 완료")
-                
-        except Exception as e:
-            print(f"   ⚠️ {ext} 로더 경고: {str(e)[:50]}... (필요 라이브러리 확인 요망)")
-
-    # 2. 로드된 문서가 있으면 Vector Store에 추가
-    if all_documents:
-        # manager.add_documents는 내부적으로 텍스트 분할(Chunking)을 수행합니다.
-        manager.add_documents(all_documents)
-        print(f"✅ 총 {len(all_documents)}개의 문서 조각이 Vector Store에 저장되었습니다.")
-    else:
-        # 데이터가 하나도 없는 경우 기본 텍스트라도 추가하여 동작 확인
-        print("   ⚠️ 로딩된 문서가 없습니다. 기본 테스트 데이터를 적재합니다.")
-        manager.add_texts(["LangGraph와 RAG 예제 데이터입니다."])
+from utils.data_loader import get_rag_vector_store
 
 def get_vector_store() -> VectorStoreManager:
     """
-    Vector Store를 초기화하고 DirectoryLoader 기반 dataloader를 호출합니다.
-    """
-    # Ollama embedding 사용 (로컬 모델 사용)
-    embeddings = get_embeddings(provider="ollama")
-    manager = VectorStoreManager(embeddings=embeddings, collection_name="naive_rag")
+    Vector Store를 초기화하고 데이터를 로드합니다.
     
-    # 통합 데이터 로더 호출
-    dataloader(manager)
-
-    return manager
+    공통 데이터 로더 모듈을 사용하여:
+    - ./rag 폴더의 모든 지원 파일을 자동 로딩
+    - 파일 변경 감지로 필요시에만 재임베딩
+    - 기존 임베딩 데이터 재사용
+    """
+    return get_rag_vector_store(collection_name="naive_rag")
 
 
 # =============================================================================

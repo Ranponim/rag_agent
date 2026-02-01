@@ -96,8 +96,23 @@ def complex_strategy_node(state: AdaptiveRAGState) -> dict:
 2. **품질 최적화**: 복잡한 질문에 다단계 처리
 3. **동적 라우팅**: LLM이 전략 결정
 
+## 📂 공통 데이터 로더
+
+모든 RAG 예제는 `utils/data_loader.py`의 공통 모듈을 사용합니다.
+
+```python
+from utils.data_loader import get_rag_vector_store
+
+def get_adaptive_vs():
+    return get_rag_vector_store(collection_name="adaptive_rag")
+```
+
+상세 내용: [Data Loader 문서](utils_data_loader.md)
+
 ---
 
 ## 🔗 관련 문서
 
 - [기본 Advanced RAG](04_advanced_rag.md)
+- [Data Loader](utils_data_loader.md)
+- [05. Integrated RAG](05_integrated_test.md) - 모든 기법 통합

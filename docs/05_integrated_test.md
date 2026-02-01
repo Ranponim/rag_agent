@@ -1,42 +1,32 @@
-# 📘 05. Integrated Test - 통합 테스트
+# 📘 05. Integrated RAG - Entity + Advanced + Adaptive 통합
 
-모든 LangGraph 기법을 통합한 최종 실전 예제입니다.
+03, 04, 04a의 RAG 기법을 하나로 통합한 최종 완성형 Agent입니다.
 
 ---
 
 ## 🖥️ CLI 실행 방법
-
-이 예제는 가장 완성도 높은 **대화형 CLI 시스템**으로 실행됩니다.
 
 ```bash
 python examples/05_integrated_test.py
 ```
 
 ```
-🚀 통합 AI 에이전트 시스템 가동 중...
-- 대화, 기술 검색, 도구 사용을 모두 지원합니다.
-- 'quit' 또는 'exit'를 입력하여 종료
+🚀 통합 RAG 시스템 (Entity + Advanced + Adaptive)
+- 질문 난이도에 따라 최적의 RAG 전략을 자동 선택합니다.
+- 종료: 'quit', 'exit', 또는 'q'
 
-🙋 사용자: 아까 LangGraph에 대해 물어봤는데, 현재 시간 계산해서 보고서 써줘
+🙋 질문: LangGraph와 LangChain의 차이점을 비교 분석해줘
 ```
-
-### 기능 특징
-- **Memory**: 세션이 유지되는 동안 모든 대화를 기억합니다.
-- **Adaptive**: 질문에 따라 RAG를 쓸지, 도구를 쓸지 LLM이 판단합니다.
-- **Harmony**: vLLM 로컬 서버 환경에서도 안정적으로 동작합니다. 상세 구현법은 [Harmony 호환성 가이드](harmony_compatibility.md)를 참고하세요.
 
 ---
 
 ## 📋 통합된 기법
 
-| 기법 | 설명 |
-|------|------|
-| **Multi-Agent** | Router가 작업 분배 |
-| **Memory** | MemorySaver로 대화 기록 유지 |
-| **Adaptive RAG** | 쿼리 유형별 다른 처리 |
-| **Tool Calling** | 외부 도구 활용 |
-| **Document Grading** | 문서 관련성 평가 |
-| **Query Transform** | HyDE 스타일 쿼리 변환 |
+| 원본 | 기법 | 역할 |
+|------|------|------|
+| **04a** | Adaptive RAG | 질문 난이도 자동 분류 (simple/moderate/complex) |
+| **03** | Entity RAG | 엔티티 추출 + 병렬 검색 (Fan-out/Fan-in) |
+| **04** | Advanced RAG | 문서 평가(Grading) + 쿼리 재작성 루프 |
 
 ---
 
@@ -44,114 +34,140 @@ python examples/05_integrated_test.py
 
 ```mermaid
 graph TD
-    START --> router[Router<br/>쿼리 분석]
+    START --> classify[분류: 질문 난이도 판별]
     
-    router -->|chat| chat[Chat 노드]
-    router -->|search| rag[RAG 파이프라인]
-    router -->|tool| tool[Tool Agent]
+    classify -->|simple| direct[Direct Answer]
+    classify -->|moderate| entity[Entity 추출]
+    classify -->|complex| complex_rag[다단계 분석]
     
-    subgraph RAG
-        rag --> qt[Query Transform]
-        qt --> retrieve[검색]
-        retrieve --> grade[문서 평가]
-        grade --> generate[생성]
-    end
+    entity --> entity_search[Entity 검색]
+    entity --> semantic[Semantic 검색]
+    entity_search --> merge[결과 병합]
+    semantic --> merge
     
-    subgraph Tools
-        tool --> tools[Tool 실행]
-        tools --> tool
-    end
+    merge --> grade[문서 평가]
+    grade -->|relevant| generate[답변 생성]
+    grade -->|irrelevant| rewrite[쿼리 재작성]
+    rewrite --> retrieve[재검색]
+    retrieve --> grade
     
-    chat --> END
+    direct --> END
     generate --> END
-    tool --> END
+    complex_rag --> END
 ```
 
 ---
 
-## 🔀 쿼리 라우팅
+## 🚦 난이도별 처리 전략
 
-| 쿼리 유형 | 예시 | 처리 경로 |
-|----------|------|----------|
-| **chat** | "안녕하세요" | Chat 노드 → 응답 |
-| **search** | "LangGraph가 뭐야?" | Query Transform → 검색 → 평가 → 생성 |
-| **tool** | "지금 몇 시야?" | Tool Agent → 도구 실행 → 응답 |
+| 난이도 | 예시 질문 | 처리 방식 |
+|--------|----------|----------|
+| **Simple** | "안녕하세요", "지금 몇 시야?" | 검색 없이 LLM 직접 답변 |
+| **Moderate** | "LangGraph가 뭐야?" | Entity+Semantic 병렬 검색 → 문서 평가 → 생성 |
+| **Complex** | "RAG와 Fine-tuning 비교 분석" | 질문 분해 → 다단계 검색 → 심층 분석 |
 
 ---
 
-## 📐 핵심 코드
+## 🔀 Moderate 전략 상세
 
-### Router 노드
+### 1. Entity RAG (03 기법)
+
 ```python
-def router_node(state: IntegratedState):
-    """질문의 의도를 분석하여 chat, search, tool 중 하나로 라우팅합니다."""
-    query = state["messages"][-1].content
-    
-    # LLM을 사용하여 의도 파악...
-    response = router_chain.invoke({"query": query})
-    return {"query_type": response.query_type}
+# 엔티티 추출
+entities = extract_entities("LangGraph와 LangChain의 차이")
+# → ["LangGraph", "LangChain"]
+
+# 병렬 검색 (Fan-out)
+entity_docs = search_by_entity(entities)  # 동시
+semantic_docs = search_semantic(question) # 동시
+
+# 결과 병합 (Fan-in)
+merged = merge_results(entity_docs, semantic_docs)
 ```
 
-### 메모리 활성화
+### 2. Advanced RAG (04 기법)
+
 ```python
-def create_integrated_agent():
-    graph = StateGraph(IntegratedAgentState)
-    
-    # 노드들 추가...
-    # 엣지들 추가...
-    
-    # 메모리 활성화
-    memory = MemorySaver()
-    compiled = graph.compile(checkpointer=memory)
-    return compiled
+# 문서 관련성 평가
+grade = grade_documents(merged, question)
+
+if grade == "relevant":
+    # 관련 있음 → 답변 생성
+    answer = generate(merged)
+else:
+    # 관련 없음 → 쿼리 재작성 후 재검색
+    new_query = rewrite_query(question)
+    new_docs = retrieve(new_query)
+    # 다시 평가... (최대 2회 루프)
 ```
 
-### 세션별 대화
+---
+
+## 🔬 Complex 전략 상세 (04a 기법)
+
 ```python
-def chat_with_agent(graph, thread_id, message):
-    config = {"configurable": {"thread_id": thread_id}}
-    result = graph.invoke(
-        {"messages": [HumanMessage(content=message)]},
-        config=config
-    )
-    return result["messages"][-1].content
+# 1. 질문 분해
+sub_queries = decompose("RAG와 Fine-tuning 비교 분석")
+# → ["RAG의 장단점", "Fine-tuning의 장단점"]
+
+# 2. 각 세부 질문으로 검색
+for sq in sub_queries + [original_question]:
+    docs = search(sq, k=2)
+    all_context.extend(docs)
+
+# 3. 심층 분석 답변 생성
+answer = generate_deep_analysis(all_context)
+```
+
+---
+
+## 📝 공통 데이터 로더 사용
+
+모든 예제가 `utils/data_loader.py`의 공통 모듈을 사용합니다.
+
+```python
+from utils.data_loader import get_rag_vector_store
+
+def get_vector_store():
+    # 같은 collection 사용 시 임베딩 재사용
+    return get_rag_vector_store(collection_name="integrated_rag")
 ```
 
 ---
 
 ## 🧪 테스트 시나리오
 
-```python
-# 1. 일반 대화
-chat_with_agent(graph, "session", "안녕하세요!")
+```bash
+# Simple 질문 → 직접 답변
+🙋 질문: 안녕하세요
+📊 사용된 전략: Simple (직접 답변)
+💡 실행 경로: classify → direct_answer
 
-# 2. 정보 검색 (RAG)
-chat_with_agent(graph, "session", "LangGraph가 뭐야?")
+# Moderate 질문 → Entity+Advanced RAG
+🙋 질문: LangGraph란 무엇인가요?
+📊 사용된 전략: Advanced RAG (Entity + Grading)
+💡 실행 경로: classify → entity_search → semantic_search → merge → grade_documents → generate
 
-# 3. 도구 사용
-chat_with_agent(graph, "session", "지금 몇 시야?")
-
-# 4. 계산
-chat_with_agent(graph, "session", "123 * 456 계산해줘")
-
-# 5. 이전 대화 참조 (Memory)
-chat_with_agent(graph, "session", "아까 LangGraph에 대해 뭐라고 했지?")
+# Complex 질문 → 다단계 분석
+🙋 질문: Self-RAG와 Corrective RAG의 차이점을 분석해줘
+📊 사용된 전략: Complex (다단계 정밀 RAG)
+💡 실행 경로: classify → complex_multi_step
 ```
 
 ---
 
 ## ✨ 핵심 포인트
 
-1. **통합 라우팅**: 쿼리 분석 후 적절한 경로로
-2. **세션 관리**: thread_id로 대화 분리
-3. **다양한 처리**: Chat, RAG, Tool 경로
+1. **Adaptive 라우팅**: 질문 성격에 맞는 최적 전략 자동 선택
+2. **Entity 병렬 검색**: 키워드+의미 기반 하이브리드 검색
+3. **Self-Correction**: 관련 없는 문서 시 재검색 루프
+4. **효율성**: 간단한 질문은 검색 없이 빠르게 응답
 
 ---
 
 ## 🔗 관련 문서
 
-- [00. LangGraph API 레퍼런스](00_langgraph_api_reference.md)
-- [01. Basic Agent](01_basic_agent.md)
-- [02. Naive RAG](02_naive_rag.md)
-- [03. Entity RAG](03_entity_rag.md)
-- [04. Advanced RAG](04_advanced_rag.md)
+- [03. Entity RAG](03_entity_rag.md) - 병렬 검색 패턴
+- [04. Advanced RAG](04_advanced_rag.md) - Self-RAG, Grading
+- [04a. Adaptive RAG](04a_adaptive_rag.md) - 난이도별 라우팅
+- [Data Loader](utils_data_loader.md) - 공통 데이터 로딩 모듈

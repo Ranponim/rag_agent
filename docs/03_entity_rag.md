@@ -104,7 +104,23 @@ Entity RAG를 익혔다면 다음 상세 예제로 심화 학습하세요:
 
 | 예제 | 주제 | 학습 내용 |
 |------|------|----------|
-| [03a. Knowledge Graph RAG](03a_knowledge_graph_rag.md) | 지식 그래프 | 엔티티 간 관계 기반 검색 (예정) |
+| [04. Advanced RAG](04_advanced_rag.md) | Self-RAG | 문서 평가, 쿼리 재작성 |
+| [04a. Adaptive RAG](04a_adaptive_rag.md) | 적응형 RAG | 난이도별 전략 선택 |
+
+---
+
+## 📂 공통 데이터 로더
+
+모든 RAG 예제는 `utils/data_loader.py`의 공통 모듈을 사용합니다.
+
+```python
+from utils.data_loader import get_rag_vector_store
+
+def get_vector_store():
+    return get_rag_vector_store(collection_name="entity_rag")
+```
+
+상세 내용: [Data Loader 문서](utils_data_loader.md)
 
 ---
 
@@ -116,3 +132,4 @@ Entity RAG를 익혔다면 다음 상세 예제로 심화 학습하세요:
 ## 다음 단계
 
 ➡️ [04. Advanced RAG](04_advanced_rag.md) - 자가 수정 RAG 파이프라인 구현
+➡️ [05. Integrated RAG](05_integrated_test.md) - 모든 기법 통합

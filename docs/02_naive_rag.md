@@ -94,30 +94,31 @@ def generate_node(state: RAGState):
 
 ---
 
-## 📂 데이터 로딩 (Multi-format)
+## 📂 데이터 로딩 (공통 모듈)
 
-본 예제는 `DirectoryLoader`를 사용하여 `./rag` 디렉토리 내의 다양한 파일 형식을 자동으로 로드합니다.
+본 예제는 `utils/data_loader.py`의 공통 모듈을 사용하여 `./rag` 디렉토리의 파일을 자동으로 로드합니다.
 
 ```python
-def dataloader():
-    """다양한 형식의 문서를 자동으로 로드합니다."""
-    loader = DirectoryLoader(
-        "./rag",
-        glob="**/*.*",  # 모든 확장자 시도
-        show_progress=True,
-        use_multithreading=True,
-        # 각 파일 확장자에 맞는 로더 연결
-        loaders={
-            ".pdf": PyPDFLoader,
-            ".csv": CSVLoader,
-            ".xlsx": UnstructuredExcelLoader,
-            ".txt": TextLoader,
-            ".md": TextLoader,
-        }
-    )
-    docs = loader.load()
-    vs.add_documents(docs)
+from utils.data_loader import get_rag_vector_store
+
+def get_vector_store():
+    """Vector Store 초기화 (자동 데이터 로드 + 영속화)"""
+    return get_rag_vector_store(collection_name="naive_rag")
 ```
+
+### 지원 파일 형식
+| 확장자 | 설명 |
+|--------|------|
+| `.txt`, `.md` | 텍스트 파일 |
+| `.csv` | CSV 파일 |
+| `.pdf` | PDF 문서 |
+| `.xlsx` | Excel 파일 |
+| `.json` | JSON 파일 (전체를 하나의 문서로) |
+| `.jsonl` | JSONL 파일 (한 줄씩 개별 문서로) |
+
+### 자동 변경 감지
+- `./rag` 폴더에 파일 추가/수정 시 자동으로 재임베딩
+- 변경 없으면 `./vector_db/naive_rag/`의 기존 임베딩 재사용
 
 ---
 

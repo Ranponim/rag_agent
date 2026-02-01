@@ -80,5 +80,6 @@ retriever = manager.as_retriever(search_kwargs={"k": 3})
 ---
 
 ## 🔗 관련 모듈
+- [Data Loader](utils_data_loader.md) - 데이터 로딩/벡터화 통합
 - [LLM 팩토리](utils_llm_factory.md)
 - [Naive RAG 예제](02_naive_rag.md)

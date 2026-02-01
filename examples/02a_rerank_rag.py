@@ -59,54 +59,14 @@ class RerankRAGState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. 지식 저장소(Vector Store) 및 데이터 로더(DataLoader)
+# 🗄️ 2. Vector Store 초기화 (공통 모듈 사용)
 # =============================================================================
 
-from langchain_community.document_loaders import DirectoryLoader, TextLoader, CSVLoader
-
-def dataloader(manager: VectorStoreManager):
-    """./rag 폴더에서 파일을 읽어와 지식 저장소에 적재합니다."""
-    print("\n📥 [데이터 로더] ./rag 폴더의 파일들을 지식으로 적재 중...")
-    
-    # 텍스트 및 CSV 파일 로딩 설정
-    documents = []
-    # 파일 확장자별 로더 설정 (Windows 안정성을 위해 use_multithreading=False 권장)
-    for ext, loader_cls in {".txt": TextLoader, ".md": TextLoader, ".csv": CSVLoader}.items():
-        try:
-            loader = DirectoryLoader(
-                path="./rag", 
-                glob=f"**/*{ext}", 
-                loader_cls=loader_cls, 
-                loader_kwargs={"encoding": "utf-8"}, 
-                use_multithreading=False,
-                silent_errors=True
-            )
-            documents.extend(loader.load())
-        except: pass
-
-    if documents:
-        manager.add_documents(documents)
-        print(f"✅ {len(documents)}개의 파일 데이터가 적재되었습니다.")
-    else:
-        # 파일이 없는 경우 기본 데이터 활용
-        samples = [
-            "LangGraph는 AI 에이전트의 흐름을 설계하는 도구입니다.",
-            "Reranking은 찾은 문서들의 순서를 AI가 다시 정하는 정확도 향상 기술입니다.",
-        ]
-        manager.add_texts(texts=samples)
-        print(f"✅ 기본 데이터 {len(samples)}개가 적재되었습니다. (./rag 폴더가 비어있음)")
+from utils.data_loader import get_rag_vector_store
 
 def get_rerank_vs() -> VectorStoreManager:
-    """Rerank 전용 지식 창고를 만들고 DataLoader를 실행합니다."""
-    # 글자를 숫자로 바꿔주는 임베딩 엔진을 가져옵니다.
-    embeddings = get_embeddings()
-    # 'rerank_rag'라는 이름의 전용 창고를 만듭니다.
-    manager = VectorStoreManager(embeddings=embeddings, collection_name="rerank_rag")
-
-    # 데이터 로더를 통해 데이터를 채웁니다.
-    dataloader(manager)
-    
-    return manager
+    """Rerank 전용 지식 창고를 만들고 데이터를 로드합니다."""
+    return get_rag_vector_store(collection_name="rerank_rag")
 
 
 # =============================================================================

@@ -168,6 +168,21 @@ Advanced RAG는 Naive RAG의 한계를 극복하는 패턴들의 조합입니다
 
 ---
 
+## 📂 공통 데이터 로더
+
+모든 RAG 예제는 `utils/data_loader.py`의 공통 모듈을 사용합니다.
+
+```python
+from utils.data_loader import get_rag_vector_store
+
+def get_vector_store():
+    return get_rag_vector_store(collection_name="advanced_rag")
+```
+
+상세 내용: [Data Loader 문서](utils_data_loader.md)
+
+---
+
 ## 🔗 상세 예제
 
 Advanced RAG를 익혔다면 다음 상세 예제로 심화 학습하세요:

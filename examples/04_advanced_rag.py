@@ -112,52 +112,14 @@ class AdvancedRAGState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. Vector Store 및 데이터 로더(DataLoader)
+# 🗄️ 2. Vector Store 초기화 (공통 모듈 사용)
 # =============================================================================
 
-from langchain_community.document_loaders import DirectoryLoader, TextLoader, CSVLoader
-
-def dataloader(manager: VectorStoreManager):
-    """고급 RAG 테스트를 위해 ./rag 폴더의 데이터를 적재합니다."""
-    print("\n📥 [데이터 로더] ./rag 폴더에서 고급 RAG용 지식 적재 중...")
-    
-    documents = []
-    # 파일 확장자별 로더 설정 (Windows 안정성을 위해 use_multithreading=False 권장)
-    for ext, loader_cls in {".txt": TextLoader, ".md": TextLoader, ".csv": CSVLoader}.items():
-        try:
-            loader = DirectoryLoader(
-                path="./rag", 
-                glob=f"**/*{ext}", 
-                loader_cls=loader_cls, 
-                loader_kwargs={"encoding": "utf-8"}, 
-                use_multithreading=False,
-                silent_errors=True
-            )
-            documents.extend(loader.load())
-        except: pass
-
-    if documents:
-        manager.add_documents(documents)
-        print(f"✅ {len(documents)}개의 파일 데이터가 고급 RAG 저장소에 적재되었습니다.")
-    else:
-        texts = [
-            "Self-RAG는 LLM이 스스로 검색 필요성을 판단하고 생성된 답변을 비평(Critique)하는 프레임워크입니다.",
-            "Hallucination(환각)은 LLM이 사실이 아닌 정보를 그럴듯하게 생성하는 현상입니다.",
-        ]
-        manager.add_texts(texts)
-        print(f"✅ 기본 고급 RAG 지식 {len(texts)}개가 적재되었습니다.")
+from utils.data_loader import get_rag_vector_store
 
 def get_vector_store() -> VectorStoreManager:
-    """
-    Vector Store 초기화 및 DataLoader 실행
-    """
-    embeddings = get_embeddings()
-    manager = VectorStoreManager(embeddings=embeddings, collection_name="advanced_rag")
-
-    # 데이터 로더를 호출하여 데이터를 채웁니다.
-    dataloader(manager)
-
-    return manager
+    """Vector Store 초기화 및 데이터 로드"""
+    return get_rag_vector_store(collection_name="advanced_rag")
 
 
 # =============================================================================

@@ -95,9 +95,23 @@ def rerank_node(state: RerankRAGState) -> dict:
 2. **LLM 평가**: 각 문서의 관련성 점수 산정
 3. **재정렬**: 점수 기준 정렬 후 Top-K 선택
 
+## 📂 공통 데이터 로더
+
+모든 RAG 예제는 `utils/data_loader.py`의 공통 모듈을 사용합니다.
+
+```python
+from utils.data_loader import get_rag_vector_store
+
+def get_vector_store():
+    return get_rag_vector_store(collection_name="rerank_rag")
+```
+
+상세 내용: [Data Loader 문서](utils_data_loader.md)
+
 ---
 
 ## 🔗 관련 문서
 
 - [기본 RAG](02_naive_rag.md)
 - [다음: Query Transform RAG](02b_query_transform_rag.md)
+- [Data Loader](utils_data_loader.md)

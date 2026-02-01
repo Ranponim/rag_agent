@@ -112,62 +112,14 @@ class EntityRAGState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. Vector Store 및 데이터 로더(DataLoader)
+# 🗄️ 2. Vector Store 초기화 (공통 모듈 사용)
 # =============================================================================
 
-from langchain_community.document_loaders import DirectoryLoader, TextLoader, CSVLoader
-
-def dataloader(manager: VectorStoreManager):
-    """./rag 폴더의 파일을 읽어와 엔티티 기반 지식으로 적재합니다."""
-    print("\n📥 [데이터 로더] ./rag 폴더에서 파일을 읽어오는 중...")
-    
-    documents = []
-    # 파일 확장자별 로더 설정 (Windows 안정성을 위해 use_multithreading=False 권장)
-    for ext, loader_cls in {".txt": TextLoader, ".md": TextLoader, ".csv": CSVLoader}.items():
-        try:
-            loader = DirectoryLoader(
-                path="./rag", 
-                glob=f"**/*{ext}", 
-                loader_cls=loader_cls, 
-                loader_kwargs={"encoding": "utf-8"}, 
-                use_multithreading=False,
-                silent_errors=True
-            )
-            documents.extend(loader.load())
-        except: pass
-
-    if documents:
-        # 파일에서 읽은 문서들에 기본 태그(Metadata)를 추가합니다.
-        for doc in documents:
-            if not doc.metadata: doc.metadata = {}
-            doc.metadata["tags"] = "FileLoaded"
-        
-        manager.add_documents(documents)
-        print(f"✅ {len(documents)}개의 파일 데이터가 적재되었습니다. (Metadata: tags=FileLoaded)")
-    else:
-        # 파일이 없는 경우 기존 엔티티 예제 데이터 사용
-        data = [
-            ("LangGraph는 순환 그래프 구조를 지원합니다.", {"tags": "LangGraph"}),
-            ("LangChain은 LLM 애플리케이션 프레임워크입니다.", {"tags": "LangChain"}),
-            ("RAG는 검색 증강 생성 기술입니다.", {"tags": "RAG"}),
-            ("Vector DB는 임베딩을 저장합니다.", {"tags": "VectorDB"}),
-        ]
-        # 텍스트와 메타데이터를 분리하여 추가
-        manager.add_texts(
-            [d[0] for d in data],           # 텍스트 리스트
-            metadatas=[d[1] for d in data]  # 메타데이터 리스트
-        )
-        print(f"✅ 기본 엔티티 데이터 {len(data)}개가 적재되었습니다.")
+from utils.data_loader import get_rag_vector_store
 
 def get_vector_store() -> VectorStoreManager:
-    """Vector Store 초기화 및 DataLoader 실행"""
-    embeddings = get_embeddings()
-    manager = VectorStoreManager(embeddings=embeddings, collection_name="entity_rag")
-
-    # 데이터 로더를 호출하여 데이터를 채웁니다.
-    dataloader(manager)
-
-    return manager
+    """Vector Store 초기화 및 데이터 로드"""
+    return get_rag_vector_store(collection_name="entity_rag")
 
 
 # =============================================================================

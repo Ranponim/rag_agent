@@ -59,51 +59,14 @@ class AdaptiveRAGState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. 지식 창고(Vector Store) 및 데이터 로더(DataLoader)
+# 🗄️ 2. Vector Store 초기화 (공통 모듈 사용)
 # =============================================================================
 
-from langchain_community.document_loaders import DirectoryLoader, TextLoader, CSVLoader
-
-def dataloader(manager: VectorStoreManager):
-    """./rag 폴더의 데이터를 읽어와 적응형 RAG 지식으로 활용합니다."""
-    print("\n📥 [데이터 로더] ./rag 폴더의 파일들을 적응형 RAG 지식으로 적재 중...")
-    
-    documents = []
-    # 파일 확장자별 로더 설정 (Windows 안정성을 위해 use_multithreading=False 권장)
-    for ext, loader_cls in {".txt": TextLoader, ".md": TextLoader, ".csv": CSVLoader}.items():
-        try:
-            loader = DirectoryLoader(
-                path="./rag", 
-                glob=f"**/*{ext}", 
-                loader_cls=loader_cls, 
-                loader_kwargs={"encoding": "utf-8"}, 
-                use_multithreading=False,
-                silent_errors=True
-            )
-            documents.extend(loader.load())
-        except: pass
-
-    if documents:
-        manager.add_documents(documents)
-        print(f"✅ {len(documents)}개의 파일 데이터가 적응형 RAG 저장소에 적재되었습니다.")
-    else:
-        texts = [
-            "LangGraph는 AI의 흐름을 지도처럼 그려주는 도구입니다.",
-            "Adaptive RAG는 난이도에 따라 검색 전략을 바꿉니다.",
-        ]
-        manager.add_texts(texts=texts)
-        print(f"✅ 기본 적응형 RAG 지식 {len(texts)}개가 적재되었습니다.")
+from utils.data_loader import get_rag_vector_store
 
 def get_adaptive_vs() -> VectorStoreManager:
-    """적응형 RAG를 위한 지식 항아리를 준비하고 DataLoader를 실행합니다."""
-    embeddings = get_embeddings() # 문장을 숫자로 바꾸는 엔진
-    # 'adaptive_rag'라는 이름의 칸에 지식을 저장합니다.
-    manager = VectorStoreManager(embeddings=embeddings, collection_name="adaptive_rag")
-
-    # 데이터 로더를 통해 데이터를 채웁니다.
-    dataloader(manager)
-    
-    return manager
+    """적응형 RAG를 위한 Vector Store를 준비합니다."""
+    return get_rag_vector_store(collection_name="adaptive_rag")
 
 
 # =============================================================================

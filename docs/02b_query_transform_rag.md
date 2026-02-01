@@ -117,9 +117,24 @@ def search_multi_node(state: QueryTransformState) -> dict:
 2. **Multi-Query**: 질문 → 변형들 → 각각 검색 → 병합
 3. **병렬 실행**: 두 방식을 동시에 실행
 
+## 📂 공통 데이터 로더
+
+모든 RAG 예제는 `utils/data_loader.py`의 공통 모듈을 사용합니다.
+
+```python
+from utils.data_loader import get_rag_vector_store
+
+def get_vector_store():
+    return get_rag_vector_store(collection_name="query_transform_rag")
+```
+
+상세 내용: [Data Loader 문서](utils_data_loader.md)
+
 ---
 
 ## 🔗 관련 문서
 
 - [이전: Rerank RAG](02a_rerank_rag.md)
 - [기본 RAG로 돌아가기](02_naive_rag.md)
+- [Data Loader](utils_data_loader.md)
+- [03. Entity RAG](03_entity_rag.md)

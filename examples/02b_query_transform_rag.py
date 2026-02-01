@@ -61,54 +61,14 @@ class QueryTransformState(TypedDict):
 
 
 # =============================================================================
-# 🗄️ 2. 지식 창고(Vector Store) 및 데이터 로더(DataLoader)
+# 🗄️ 2. Vector Store 초기화 (공통 모듈 사용)
 # =============================================================================
 
-from langchain_community.document_loaders import DirectoryLoader, TextLoader, CSVLoader
-
-def dataloader(manager: VectorStoreManager):
-    """./rag 폴더에서 파일을 읽어와 지식 창고에 적재합니다."""
-    print("\n📥 [데이터 로더] ./rag 폴더의 파일들을 검색 데이터로 적재 중...")
-    
-    documents = []
-    # 파일 확장자별 로더 설정 (Windows 안정성을 위해 use_multithreading=False 권장)
-    for ext, loader_cls in {".txt": TextLoader, ".md": TextLoader, ".csv": CSVLoader}.items():
-        try:
-            loader = DirectoryLoader(
-                path="./rag", 
-                glob=f"**/*{ext}", 
-                loader_cls=loader_cls, 
-                loader_kwargs={"encoding": "utf-8"}, 
-                use_multithreading=False,
-                silent_errors=True
-            )
-            documents.extend(loader.load())
-        except: pass
-
-    if documents:
-        manager.add_documents(documents)
-        print(f"✅ {len(documents)}개의 파일 기반 지식이 적재되었습니다.")
-    else:
-        # 파일이 없을 경우 기본 지식 활용
-        samples = [
-            "LangGraph는 AI 에이전트의 복잡한 흐름을 제어하는 프레임워크입니다.",
-            "HyDE는 질문에 대한 가상 답변을 먼저 만들고 검색하는 검색 도우미 기술입니다.",
-            "Multi-Query는 하나의 질문을 여러 갈래로 넓혀서 검색 범위를 확장합니다.",
-            "임베딩은 문장을 고차원 숫자로 바꿔서 의미적 유사도를 측정하게 해줍니다.",
-        ]
-        manager.add_texts(texts=samples)
-        print(f"✅ 기본 데이터 {len(samples)}개가 적재되었습니다. (./rag 폴더 비어있음)")
+from utils.data_loader import get_rag_vector_store
 
 def get_qt_vs() -> VectorStoreManager:
-    """검색 변환 전용 지식 창고를 생성하고 DataLoader를 실행합니다."""
-    embeddings = get_embeddings() # 글자를 숫자로 바꾸는 엔진
-    # 'query_transform_rag'라는 이름의 전용 창고를 마련합니다.
-    manager = VectorStoreManager(embeddings=embeddings, collection_name="query_transform_rag")
-
-    # 데이터 로더를 호출하여 지식을 채웁니다.
-    dataloader(manager)
-    
-    return manager
+    """검색 변환 전용 지식 창고를 생성하고 데이터를 로드합니다."""
+    return get_rag_vector_store(collection_name="query_transform_rag")
 
 
 # =============================================================================

@@ -225,6 +225,7 @@ LangGraph의 기본 구조와 에이전트 패턴을 학습합니다.
 |------|------|----------|
 | **LLM Factory** | [`utils_llm_factory.md`](docs/utils_llm_factory.md) | OpenAI/Ollama LLM 및 임베딩 생성과 캐싱 |
 | **Vector Store** | [`utils_vector_store.md`](docs/utils_vector_store.md) | ChromaDB 관리, 문서 청킹 및 검색 통합 |
+| **Data Loader** | [`utils_data_loader.md`](docs/utils_data_loader.md) | 다양한 파일 형식 로딩, Vector Store 영속화, 파일 변경 감지 |
 
 ---
 
