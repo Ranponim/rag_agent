@@ -124,7 +124,9 @@ class RAGState(TypedDict):
 # - Vector Store 영속화 (한 번 임베딩한 데이터 재사용)
 # =============================================================================
 
+<<<<<<< HEAD
 from utils.data_loader import get_rag_vector_store
+
 
 def get_vector_store() -> VectorStoreManager:
     """

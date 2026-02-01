@@ -62,8 +62,9 @@ class VectorStoreManager:
         embeddings: Optional[Embeddings] = None,
         collection_name: str = "langgraph_rag",
         persist_directory: Optional[str] = None,
-        chunk_size: int = 1000,
+        chunk_size: int = 2000,
         chunk_overlap: int = 200,
+        embedding_batch_size: int = 100,
     ):
         """
         VectorStoreManager 초기화
@@ -74,9 +75,11 @@ class VectorStoreManager:
             persist_directory: 영구 저장 경로 (None이면 메모리에만 저장)
             chunk_size: 텍스트 청크 크기
             chunk_overlap: 청크 간 중복 크기
+            embedding_batch_size: 임베딩 배치 사이즈 (기본값: 100)
         """
         self.collection_name = collection_name
         self.persist_directory = persist_directory
+        self.embedding_batch_size = embedding_batch_size
         
         # 임베딩 모델 설정
         if embeddings is None:
@@ -198,8 +201,8 @@ class VectorStoreManager:
         # 임베딩 요청 직전 상세 로그 (디버깅용)
         print(f"\n📤 임베딩 모델로 요청 준비 중...")
         print(f"   - 요청할 텍스트 수: {len(texts)}개")
+        print(f"   - 배치 사이즈: {self.embedding_batch_size}")
         print(f"   - 임베딩 모델 타입: {type(self.embeddings).__name__}")
-        print(f"   - 임베딩 모델 정보: {self.embeddings}")
         
         # 첫 번째 텍스트의 미리보기 (디버깅용)
         if texts:
@@ -208,18 +211,33 @@ class VectorStoreManager:
         
         logger.info(f"{len(texts)}개의 텍스트를 Vector Store에 추가 중...")
         
+        all_ids = []
+        total_texts = len(texts)
+
         try:
-            print("   ⏳ 임베딩 모델로 벡터화 요청 중... (서버 응답 대기)")
-            ids = self.vector_store.add_texts(texts=texts, metadatas=metadatas)
-            print(f"   ✅ 임베딩 완료! {len(ids)}개의 벡터가 생성되었습니다.")
+            for i in range(0, total_texts, self.embedding_batch_size):
+                # 배치 슬라이싱
+                batch_texts = texts[i : i + self.embedding_batch_size]
+                batch_metadatas = None
+                if metadatas:
+                    batch_metadatas = metadatas[i : i + self.embedding_batch_size]
+
+                print(f"   ⏳ 배치 처리 중 ({i+1}~{min(i+self.embedding_batch_size, total_texts)} / {total_texts})...")
+
+                # 배치 추가
+                ids = self.vector_store.add_texts(texts=batch_texts, metadatas=batch_metadatas)
+                all_ids.extend(ids)
+
+            print(f"   ✅ 전체 임베딩 완료! 총 {len(all_ids)}개의 벡터가 생성되었습니다.")
+
         except Exception as e:
             print(f"\n❌ 임베딩 중 오류 발생!")
             print(f"   오류 타입: {type(e).__name__}")
             print(f"   오류 메시지: {str(e)}")
             raise  # 오류를 다시 던져서 상위에서 처리하도록 함
         
-        logger.info(f"{len(ids)}개의 텍스트가 추가되었습니다.")
-        return ids
+        logger.info(f"{len(all_ids)}개의 텍스트가 추가되었습니다.")
+        return all_ids
     
     def add_documents(
         self,
@@ -242,22 +260,35 @@ class VectorStoreManager:
         # 임베딩 요청 직전 상세 로그 (디버깅용)
         print(f"\n📤 임베딩 모델로 문서 벡터화 요청 준비 중...")
         print(f"   - 요청할 문서 수: {len(documents)}개")
+        print(f"   - 배치 사이즈: {self.embedding_batch_size}")
         print(f"   - 임베딩 모델 타입: {type(self.embeddings).__name__}")
         
         logger.info(f"{len(documents)}개의 문서를 Vector Store에 추가 중...")
         
+        all_ids = []
+        total_docs = len(documents)
+
         try:
-            print("   ⏳ 임베딩 모델로 벡터화 요청 중... (서버 응답 대기)")
-            ids = self.vector_store.add_documents(documents=documents)
-            print(f"   ✅ 임베딩 완료! {len(ids)}개의 벡터가 생성되었습니다.")
+            for i in range(0, total_docs, self.embedding_batch_size):
+                # 배치 슬라이싱
+                batch_docs = documents[i : i + self.embedding_batch_size]
+
+                print(f"   ⏳ 배치 처리 중 ({i+1}~{min(i+self.embedding_batch_size, total_docs)} / {total_docs})...")
+
+                # 배치 추가
+                ids = self.vector_store.add_documents(documents=batch_docs)
+                all_ids.extend(ids)
+
+            print(f"   ✅ 전체 임베딩 완료! 총 {len(all_ids)}개의 벡터가 생성되었습니다.")
+
         except Exception as e:
             print(f"\n❌ 문서 임베딩 중 오류 발생!")
             print(f"   오류 타입: {type(e).__name__}")
             print(f"   오류 메시지: {str(e)}")
             raise  # 오류를 다시 던져서 상위에서 처리하도록 함
         
-        logger.info(f"{len(ids)}개의 문서가 추가되었습니다.")
-        return ids
+        logger.info(f"{len(all_ids)}개의 문서가 추가되었습니다.")
+        return all_ids
     
     def search(
         self,
