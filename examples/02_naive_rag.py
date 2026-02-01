@@ -122,7 +122,7 @@ from utils.data_loader import get_rag_vector_store
 
 def get_naive_vs() -> VectorStoreManager:
     """Naive RAG 전용 지식 창고를 만들고 데이터를 로드합니다."""
-    return get_rag_vector_store(collection_name="naive_rag")
+    return get_rag_vector_store(collection_name="rag_collection")
 
 
 # =============================================================================

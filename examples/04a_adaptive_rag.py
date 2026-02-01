@@ -66,7 +66,7 @@ from utils.data_loader import get_rag_vector_store
 
 def get_adaptive_vs() -> VectorStoreManager:
     """적응형 RAG를 위한 Vector Store를 준비합니다."""
-    return get_rag_vector_store(collection_name="adaptive_rag")
+    return get_rag_vector_store(collection_name="rag_collection")
 
 
 # =============================================================================

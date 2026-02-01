@@ -119,7 +119,7 @@ from utils.data_loader import get_rag_vector_store
 
 def get_vector_store() -> VectorStoreManager:
     """Vector Store 초기화 및 데이터 로드"""
-    return get_rag_vector_store(collection_name="advanced_rag")
+    return get_rag_vector_store(collection_name="rag_collection")
 
 
 # =============================================================================

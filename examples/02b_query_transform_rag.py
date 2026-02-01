@@ -68,7 +68,7 @@ from utils.data_loader import get_rag_vector_store
 
 def get_qt_vs() -> VectorStoreManager:
     """검색 변환 전용 지식 창고를 생성하고 데이터를 로드합니다."""
-    return get_rag_vector_store(collection_name="query_transform_rag")
+    return get_rag_vector_store(collection_name="rag_collection")
 
 
 # =============================================================================

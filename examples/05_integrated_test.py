@@ -100,7 +100,7 @@ def get_vector_store() -> VectorStoreManager:
     
     모든 기능이 같은 collection을 공유하여 임베딩을 재사용합니다.
     """
-    return get_rag_vector_store(collection_name="integrated_rag")
+    return get_rag_vector_store(collection_name="rag_collection")
 
 
 # =============================================================================
