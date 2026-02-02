@@ -559,6 +559,12 @@ class MyState(TypedDict):
 
 **목표**: 노드 1개만 있는 가장 단순한 그래프 만들기
 
+```mermaid
+graph TD
+    START --> greet
+    greet --> END
+```
+
 ```python
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
@@ -584,6 +590,17 @@ result = app.invoke({"message": "LangGraph 배우는 중!"})
 ### Step 2: 조건부 분기 구현
 
 **목표**: 상태 값에 따라 다른 경로로 분기하기
+
+```mermaid
+graph TD
+    START --> check_score
+    check_score --> excellent
+    check_score --> good
+    check_score --> needs_work
+    excellent --> END
+    good --> END
+    needs_work --> END
+```
 
 ```python
 from typing import Literal
@@ -620,6 +637,14 @@ app = graph.compile()
 ### Step 3: 완전한 Agent (도구 호출 + 루프)
 
 **목표**: LLM + 도구 + 루프를 활용한 Agent 구현
+
+```mermaid
+graph TD
+    START --> agent
+    agent --> tools
+    agent --> END
+    tools --> agent
+```
 
 ```python
 from typing import Literal
